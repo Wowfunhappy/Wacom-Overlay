@@ -8,6 +8,8 @@
 @synthesize lineWidth;
 @synthesize erasing = mErasing;
 @synthesize currentColorIndex;
+@synthesize smoothingLevel;
+@synthesize enableSmoothing;
 @dynamic presetColors;
 
 - (id)initWithFrame:(NSRect)frame {
@@ -34,6 +36,11 @@
         mErasing = NO;
         hasLastErasePoint = NO;
         lastErasePoint = NSZeroPoint;
+        
+        // Initialize smoothing with maximum level
+        pointBuffer = [[NSMutableArray alloc] init];
+        self.smoothingLevel = 20;  // Maximum smoothing level for neatest handwriting
+        self.enableSmoothing = YES;  // Always enabled
         
         // Make the view transparent to allow click-through
         [self setWantsLayer:YES];
@@ -163,6 +170,12 @@
         return;
     }
     
+    // Clear the smoothing buffer at the start of a new stroke
+    [self clearSmoothingBuffer];
+    
+    // Apply smoothing to the starting point (adds it to buffer)
+    NSPoint smoothedPoint = [self smoothPoint:viewPoint];
+    
     // Start a new path
     currentPath = [[NSBezierPath bezierPath] retain];
     [currentPath setLineWidth:lineWidth];
@@ -170,8 +183,8 @@
     [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
     
     // Start the path
-    [currentPath moveToPoint:viewPoint];
-    lastPoint = viewPoint;
+    [currentPath moveToPoint:smoothedPoint];
+    lastPoint = smoothedPoint;
     
     // Add a marker for the start of a new stroke
     // We'll record the current path count at the beginning of a stroke
@@ -225,6 +238,9 @@
         // Convert to view coordinates
         NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
         
+        // Apply smoothing to the point
+        NSPoint smoothedPoint = [self smoothPoint:viewPoint];
+        
         // Create a segment path for this movement with pressure-sensitive width
         NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
         [segmentPath setLineCapStyle:NSRoundLineCapStyle];
@@ -242,7 +258,7 @@
         
         // Create segment from last point to current point
         [segmentPath moveToPoint:lastPoint];
-        [segmentPath lineToPoint:viewPoint];
+        [segmentPath lineToPoint:smoothedPoint];
         
         // Add this segment to our collection
         [paths addObject:segmentPath];
@@ -250,7 +266,7 @@
         [segmentPath release];
         
         // Update last point for next segment
-        lastPoint = viewPoint;
+        lastPoint = smoothedPoint;
         
         NSLog(@"DrawView: Adding point to path: %@", NSStringFromPoint(viewPoint));
         
@@ -273,6 +289,9 @@
         [self resetEraseTracking];
         return;
     }
+    
+    // Clear the smoothing buffer at the end of a stroke
+    [self clearSmoothingBuffer];
     
     // Release the current path as we now use individual segments
     if (currentPath) {
@@ -708,7 +727,57 @@
     }
     [strokeColor release];
     [presetColors release];
+    [pointBuffer release];
     [super dealloc];
+}
+
+- (NSPoint)smoothPoint:(NSPoint)point {
+    // If smoothing is disabled, return the original point
+    if (!self.enableSmoothing || self.smoothingLevel < 1) {
+        return point;
+    }
+    
+    // Add the new point to the buffer
+    [pointBuffer addObject:[NSValue valueWithPoint:point]];
+    
+    // Determine how many points to use for smoothing
+    NSInteger bufferSize = smoothingLevel;
+    
+    // Keep buffer from growing too large by removing oldest points
+    while ([pointBuffer count] > bufferSize) {
+        [pointBuffer removeObjectAtIndex:0];
+    }
+    
+    // If we don't have enough points yet, just return the current one
+    if ([pointBuffer count] < 2) {
+        return point;
+    }
+    
+    // Calculate a weighted average of the points
+    NSPoint smoothedPoint = NSZeroPoint;
+    CGFloat totalWeight = 0.0;
+    
+    // Use a basic weights array with more emphasis on recent points
+    for (NSInteger i = 0; i < [pointBuffer count]; i++) {
+        NSPoint pt = [[pointBuffer objectAtIndex:i] pointValue];
+        CGFloat weight = (i + 1.0); // Linear weighting: newer points have higher weight
+        
+        smoothedPoint.x += pt.x * weight;
+        smoothedPoint.y += pt.y * weight;
+        totalWeight += weight;
+    }
+    
+    // Normalize the smoothed point
+    if (totalWeight > 0) {
+        smoothedPoint.x /= totalWeight;
+        smoothedPoint.y /= totalWeight;
+    }
+    
+    return smoothedPoint;
+}
+
+- (void)clearSmoothingBuffer {
+    [pointBuffer removeAllObjects];
 }
 
 @end

@@ -16,6 +16,11 @@
     BOOL hasLastErasePoint;
     NSArray *presetColors;
     NSInteger currentColorIndex;
+    
+    // Smoothing related variables
+    NSMutableArray *pointBuffer;
+    NSInteger smoothingLevel;
+    BOOL enableSmoothing;
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
@@ -23,6 +28,8 @@
 @property (nonatomic, assign) BOOL erasing;
 @property (nonatomic, readonly) NSArray *presetColors;
 @property (nonatomic, assign) NSInteger currentColorIndex;
+@property (nonatomic, assign) NSInteger smoothingLevel;
+@property (nonatomic, assign) BOOL enableSmoothing;
 
 - (void)clear;
 - (void)mouseEvent:(NSEvent *)event;
@@ -36,5 +43,7 @@
 - (void)resetEraseTracking;
 - (void)toggleToNextColor;
 - (void)setPresetColorAtIndex:(NSInteger)index toColor:(NSColor *)color;
+- (NSPoint)smoothPoint:(NSPoint)point;
+- (void)clearSmoothingBuffer;
 
 @end

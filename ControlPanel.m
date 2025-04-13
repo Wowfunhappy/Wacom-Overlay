@@ -4,7 +4,7 @@
 @implementation ControlPanel
 
 - (id)initWithDrawView:(DrawView *)aDrawView {
-    NSRect frame = NSMakeRect(0, 0, 300, 220);  // Increased height for preset colors
+    NSRect frame = NSMakeRect(0, 0, 300, 220);  // Original height without smoothing controls
     self = [super initWithContentRect:frame
                             styleMask:1 | 2 // NSTitledWindowMask | NSClosableWindowMask
                               backing:NSBackingStoreBuffered
@@ -225,6 +225,7 @@
         [colorWell setColor:[well color]];
     }
 }
+
 
 - (void)quitButtonClicked:(id)sender {
     [NSApp terminate:self];
