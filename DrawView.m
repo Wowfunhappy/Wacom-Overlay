@@ -12,6 +12,10 @@
         // Initialize drawing properties
         paths = [[NSMutableArray alloc] init];
         pathColors = [[NSMutableArray alloc] init];
+        strokeMarkers = [[NSMutableArray alloc] init];
+        undoPaths = [[NSMutableArray alloc] init];
+        undoPathColors = [[NSMutableArray alloc] init];
+        undoStrokeMarkers = [[NSMutableArray alloc] init];
         self.strokeColor = [NSColor redColor];
         self.lineWidth = 2.0;
         
@@ -100,6 +104,10 @@
     [currentPath moveToPoint:viewPoint];
     lastPoint = viewPoint;
     
+    // Add a marker for the start of a new stroke
+    // We'll record the current path count at the beginning of a stroke
+    [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
+    
     NSLog(@"DrawView: Starting new path at point: %@", NSStringFromPoint(viewPoint));
     
     [self setNeedsDisplay:YES];
@@ -171,6 +179,10 @@
         currentPath = nil;
         [self setNeedsDisplay:YES];
         
+        // Clear the redo stack since we've added new paths
+        [undoPaths removeAllObjects];
+        [undoPathColors removeAllObjects];
+        
         NSLog(@"DrawView: Finished stroke, total segments: %lu", (unsigned long)[paths count]);
     }
 }
@@ -178,6 +190,10 @@
 - (void)clear {
     [paths removeAllObjects];
     [pathColors removeAllObjects];
+    [strokeMarkers removeAllObjects];
+    [undoPaths removeAllObjects];
+    [undoPathColors removeAllObjects];
+    [undoStrokeMarkers removeAllObjects];
     if (currentPath) {
         [currentPath release];
         currentPath = nil;
@@ -190,6 +206,99 @@
 // Make sure the view accepts first responder to get events
 - (BOOL)acceptsFirstResponder {
     return YES;
+}
+
+// Undo the last complete stroke
+- (void)undo {
+    // Check if there are any paths to undo
+    if ([paths count] > 0 && [strokeMarkers count] > 0) {
+        // Get the marker for the last stroke
+        NSInteger markerIndex = [strokeMarkers count] - 1;
+        NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
+        NSInteger endIndex = [paths count] - 1;
+        NSInteger segmentCount = endIndex - startIndex + 1;
+        
+        // Store the start index in the undo markers stack
+        [undoStrokeMarkers addObject:[NSNumber numberWithInteger:segmentCount]];
+        
+        // Move each path segment in the stroke to the undo stack (in reverse to maintain order)
+        for (NSInteger i = endIndex; i >= startIndex; i--) {
+            // Get the path and color at this index
+            NSBezierPath *pathToUndo = [[paths objectAtIndex:i] retain];
+            NSColor *colorToUndo = [[pathColors objectAtIndex:i] retain];
+            
+            // Add to undo stacks
+            [undoPaths addObject:pathToUndo];
+            [undoPathColors addObject:colorToUndo];
+            
+            // Release our retained copies
+            [pathToUndo release];
+            [colorToUndo release];
+        }
+        
+        // Remove the segments from the current paths
+        NSRange removeRange = NSMakeRange(startIndex, segmentCount);
+        [paths removeObjectsInRange:removeRange];
+        [pathColors removeObjectsInRange:removeRange];
+        
+        // Remove the marker for this stroke
+        [strokeMarkers removeObjectAtIndex:markerIndex];
+        
+        // Redraw
+        [self setNeedsDisplay:YES];
+        
+        NSLog(@"DrawView: Undo performed, removed stroke with %ld segments", (long)segmentCount);
+    } else {
+        NSLog(@"DrawView: Nothing to undo");
+    }
+}
+
+// Redo the last undone stroke
+- (void)redo {
+    // Check if there are any paths to redo
+    if ([undoPaths count] > 0 && [undoStrokeMarkers count] > 0) {
+        // Get the segment count for the stroke to redo
+        NSInteger segmentCount = [[undoStrokeMarkers lastObject] integerValue];
+        
+        // Check if we have enough segments in the undo stack
+        if ([undoPaths count] >= segmentCount) {
+            // Add a marker for where this stroke starts in the paths array
+            [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
+            
+            // Move the paths and colors back (in reverse because we stored them in reverse)
+            for (NSInteger i = 0; i < segmentCount; i++) {
+                NSInteger undoIndex = [undoPaths count] - 1;
+                
+                // Get the path and color to redo
+                NSBezierPath *pathToRedo = [[undoPaths objectAtIndex:undoIndex] retain];
+                NSColor *colorToRedo = [[undoPathColors objectAtIndex:undoIndex] retain];
+                
+                // Add to active paths
+                [paths addObject:pathToRedo];
+                [pathColors addObject:colorToRedo];
+                
+                // Remove from undo stacks
+                [undoPaths removeObjectAtIndex:undoIndex];
+                [undoPathColors removeObjectAtIndex:undoIndex];
+                
+                // Release our retained copies
+                [pathToRedo release];
+                [colorToRedo release];
+            }
+            
+            // Remove the marker for this stroke
+            [undoStrokeMarkers removeLastObject];
+            
+            // Redraw
+            [self setNeedsDisplay:YES];
+            
+            NSLog(@"DrawView: Redo performed, restored stroke with %ld segments", (long)segmentCount);
+        } else {
+            NSLog(@"DrawView: Error - undo stack count doesn't match marker");
+        }
+    } else {
+        NSLog(@"DrawView: Nothing to redo");
+    }
 }
 
 // Accept mouse down events regardless of key window status
@@ -205,6 +314,10 @@
 - (void)dealloc {
     [paths release];
     [pathColors release];
+    [strokeMarkers release];
+    [undoPaths release];
+    [undoPathColors release];
+    [undoStrokeMarkers release];
     if (currentPath) {
         [currentPath release];
     }

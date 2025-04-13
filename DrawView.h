@@ -3,6 +3,10 @@
 @interface DrawView : NSView {
     NSMutableArray *paths;
     NSMutableArray *pathColors;
+    NSMutableArray *strokeMarkers;
+    NSMutableArray *undoPaths;
+    NSMutableArray *undoPathColors;
+    NSMutableArray *undoStrokeMarkers;
     NSBezierPath *currentPath;
     NSColor *strokeColor;
     CGFloat lineWidth;
@@ -15,5 +19,7 @@
 - (void)clear;
 - (void)mouseEvent:(NSEvent *)event;
 - (NSPoint)convertScreenPointToView:(NSPoint)screenPoint;
+- (void)undo;
+- (void)redo;
 
 @end

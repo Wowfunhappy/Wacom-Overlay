@@ -10,9 +10,7 @@
 static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *userInfo) {
     AppDelegate *appDelegate = (AppDelegate *)userInfo;
     
-    // Check if this is a tablet event
-    // There's no direct way to check for tablet events through CGEvent API in 10.9
-    // So we'll convert to NSEvent and check
+    // Convert to NSEvent to check event type
     NSEvent *nsEvent = [NSEvent eventWithCGEvent:event];
     
     // Check if this is a tablet event
@@ -27,6 +25,30 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             
             // Prevent the event from propagating to other applications
             return NULL; // Return NULL to stop event propagation
+        }
+    }
+    // Check if this is a keyboard event
+    else if (type == kCGEventKeyDown) {
+        NSLog(@"Key down event captured: %@", nsEvent);
+        
+        // Check if Command key is pressed
+        NSUInteger flags = [nsEvent modifierFlags];
+        if (flags & NSCommandKeyMask) {
+            NSString *characters = [nsEvent characters];
+            
+            // Check for Cmd+Z (undo)
+            if ([characters isEqualToString:@"z"] && !(flags & NSShiftKeyMask)) {
+                NSLog(@"Cmd+Z detected - forwarding to draw view");
+                [appDelegate.drawView undo];
+                return NULL; // Consume the event
+            }
+            
+            // Check for Cmd+Shift+Z (redo)
+            if ((flags & NSShiftKeyMask) && [characters isEqualToString:@"Z"]) {
+                NSLog(@"Cmd+Shift+Z detected - forwarding to draw view");
+                [appDelegate.drawView redo];
+                return NULL; // Consume the event
+            }
         }
     }
     
@@ -74,11 +96,13 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     
     NSLog(@"Connected overlay window to TabletApplication for event interception");
     
-    // Set up event tap to capture ALL tablet events system-wide
+    // Set up event tap to capture ALL tablet events and keyboard events system-wide
     // We need to tap into events at the lowest level to truly intercept them
     CGEventMask eventMask = CGEventMaskBit(kCGEventLeftMouseDown) | 
                             CGEventMaskBit(kCGEventLeftMouseUp) | 
-                            CGEventMaskBit(kCGEventLeftMouseDragged);
+                            CGEventMaskBit(kCGEventLeftMouseDragged) |
+                            CGEventMaskBit(kCGEventKeyDown) |
+                            CGEventMaskBit(kCGEventKeyUp);
     
     // Create the event tap
     eventTap = CGEventTapCreate(kCGSessionEventTap,  // Tap at session level (lowest level)
