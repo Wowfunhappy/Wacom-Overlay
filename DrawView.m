@@ -179,9 +179,15 @@
         currentPath = nil;
         [self setNeedsDisplay:YES];
         
-        // Clear the redo stack since we've added new paths
-        [undoPaths removeAllObjects];
-        [undoPathColors removeAllObjects];
+        // Only clear the redo stack if we've actually drawn something new
+        if ([paths count] > 0) {
+            // Clear the redo stack since we've added new paths
+            [undoPaths removeAllObjects];
+            [undoPathColors removeAllObjects];
+            [undoStrokeMarkers removeAllObjects];
+            
+            NSLog(@"DrawView: Cleared redo stack due to new stroke");
+        }
         
         NSLog(@"DrawView: Finished stroke, total segments: %lu", (unsigned long)[paths count]);
     }
@@ -255,10 +261,15 @@
 
 // Redo the last undone stroke
 - (void)redo {
+    NSLog(@"DrawView: Redo requested. undoPaths count: %lu, undoStrokeMarkers count: %lu", 
+          (unsigned long)[undoPaths count], (unsigned long)[undoStrokeMarkers count]);
+    
     // Check if there are any paths to redo
     if ([undoPaths count] > 0 && [undoStrokeMarkers count] > 0) {
         // Get the segment count for the stroke to redo
         NSInteger segmentCount = [[undoStrokeMarkers lastObject] integerValue];
+        
+        NSLog(@"DrawView: Attempting to redo stroke with %ld segments", (long)segmentCount);
         
         // Check if we have enough segments in the undo stack
         if ([undoPaths count] >= segmentCount) {
@@ -294,7 +305,8 @@
             
             NSLog(@"DrawView: Redo performed, restored stroke with %ld segments", (long)segmentCount);
         } else {
-            NSLog(@"DrawView: Error - undo stack count doesn't match marker");
+            NSLog(@"DrawView: Error - undo stack count doesn't match marker. Need %ld but have %lu", 
+                  (long)segmentCount, (unsigned long)[undoPaths count]);
         }
     } else {
         NSLog(@"DrawView: Nothing to redo");

@@ -44,7 +44,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             }
             
             // Check for Cmd+Shift+Z (redo)
-            if ((flags & NSShiftKeyMask) && [characters isEqualToString:@"Z"]) {
+            if ((flags & NSShiftKeyMask) && ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"])) {
                 NSLog(@"Cmd+Shift+Z detected - forwarding to draw view");
                 [appDelegate.drawView redo];
                 return NULL; // Consume the event
