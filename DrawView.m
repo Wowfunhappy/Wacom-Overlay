@@ -7,6 +7,8 @@
 @synthesize strokeColor;
 @synthesize lineWidth;
 @synthesize erasing = mErasing;
+@synthesize currentColorIndex;
+@dynamic presetColors;
 
 - (id)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
@@ -623,6 +625,47 @@
     hasLastErasePoint = NO;
     lastErasePoint = NSZeroPoint;
     NSLog(@"DrawView: Reset erase tracking");
+}
+
+- (NSArray *)presetColors {
+    return presetColors;
+}
+
+- (void)setPresetColorAtIndex:(NSInteger)index toColor:(NSColor *)color {
+    if (index < 0 || index >= [presetColors count]) {
+        NSLog(@"DrawView: Invalid preset color index: %ld", (long)index);
+        return;
+    }
+    
+    // Create a mutable copy of the array
+    NSMutableArray *mutablePresets = [presetColors mutableCopy];
+    
+    // Replace the color at the specified index
+    [mutablePresets replaceObjectAtIndex:index withObject:color];
+    
+    // Release the old array and assign the new one
+    [presetColors release];
+    presetColors = [[NSArray alloc] initWithArray:mutablePresets];
+    [mutablePresets release];
+    
+    // If the current color index is the one being changed, update the stroke color
+    if (currentColorIndex == index) {
+        self.strokeColor = color;
+        
+        // Update the color well in the control panel
+        NSArray *windows = [NSApp windows];
+        for (NSWindow *window in windows) {
+            if ([[window className] isEqualToString:@"ControlPanel"]) {
+                NSColorWell *colorWell = [window valueForKey:@"colorWell"];
+                if (colorWell) {
+                    [colorWell setColor:color];
+                }
+                break;
+            }
+        }
+    }
+    
+    NSLog(@"DrawView: Set preset color at index %ld to %@", (long)index, color);
 }
 
 - (void)toggleToNextColor {

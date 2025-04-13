@@ -21,6 +21,8 @@
 @property (nonatomic, strong) NSColor *strokeColor;
 @property (nonatomic, assign) CGFloat lineWidth;
 @property (nonatomic, assign) BOOL erasing;
+@property (nonatomic, readonly) NSArray *presetColors;
+@property (nonatomic, assign) NSInteger currentColorIndex;
 
 - (void)clear;
 - (void)mouseEvent:(NSEvent *)event;
@@ -33,5 +35,6 @@
 - (void)eraseStrokeAtPoint:(NSPoint)point;
 - (void)resetEraseTracking;
 - (void)toggleToNextColor;
+- (void)setPresetColorAtIndex:(NSInteger)index toColor:(NSColor *)color;
 
 @end

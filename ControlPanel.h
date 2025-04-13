@@ -8,6 +8,11 @@
     NSColorWell *colorWell;
     NSSlider *lineWidthSlider;
     NSButton *quitButton;
+    
+    NSColorWell *preset1ColorWell;
+    NSColorWell *preset2ColorWell;
+    NSColorWell *preset3ColorWell;
+    NSArray *presetColorWells;
 }
 
 - (id)initWithDrawView:(DrawView *)aDrawView;
@@ -15,5 +20,6 @@
 - (void)colorChanged:(id)sender;
 - (void)lineWidthChanged:(id)sender;
 - (void)quitButtonClicked:(id)sender;
+- (void)presetColorChanged:(id)sender;
 
 @end
