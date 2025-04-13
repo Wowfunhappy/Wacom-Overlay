@@ -21,8 +21,9 @@
         // Set a high level so we're above other windows
         [self setLevel:NSFloatingWindowLevel];
         
-        // Important: we need to intercept events but allow mouse clicks through
-        [self setIgnoresMouseEvents:NO];
+        // Important: We want the window to ignore ALL mouse events
+        // We'll use a global event monitor to catch tablet events instead
+        [self setIgnoresMouseEvents:YES];
         
         [self setOpaque:NO];
         [self setHasShadow:NO];
@@ -40,33 +41,8 @@
     return self;
 }
 
-// Override to selectively handle events - this is critical for separating tablet from mouse
-- (void)sendEvent:(NSEvent *)event {
-    // Handle tablet events specially
-    if ([event isTabletPointerEvent]) {
-        NSLog(@"OverlayWindow received tablet event - directly forwarding to view");
-        
-        // Directly send to our draw view for more reliable handling
-        DrawView *drawView = (DrawView *)[self contentView];
-        [drawView mouseEvent:event];
-        return;
-    } 
-    else if ([event isTabletProximityEvent]) {
-        NSLog(@"OverlayWindow received proximity event - passing to system");
-        [super sendEvent:event];
-        return;
-    }
-    
-    // For all other events, check if they are mouse events
-    if ([event isEventClassMouse]) {
-        // Pass through mouse events to other applications
-        NSLog(@"OverlayWindow ignoring mouse event: %ld", (long)[event type]);
-        return; // Don't call super - this makes mouse events pass through
-    }
-    
-    // Handle all non-mouse events normally
-    [super sendEvent:event];
-}
+// We don't need to override sendEvent: anymore since we're using a global event monitor
+// and setIgnoresMouseEvents:YES makes the window completely transparent to events
 
 // Make window fully transparent to clicks
 - (BOOL)canBecomeKeyWindow {

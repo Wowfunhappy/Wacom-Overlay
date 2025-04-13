@@ -5,12 +5,11 @@
 #import "DrawView.h"
 #import "TabletApplication.h"
 
-@interface AppDelegate ()
-@property (strong) OverlayWindow *overlayWindow;
-@property (strong) ControlPanel *controlPanel;
-@end
-
 @implementation AppDelegate
+
+@synthesize overlayWindow;
+@synthesize controlPanel;
+@synthesize drawView;
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
     // Create the overlay window that will receive tablet events
@@ -19,24 +18,39 @@
                                                             backing:NSBackingStoreBuffered
                                                               defer:NO];
     
-    // Set window to be transparent and pass-through mouse events
+    // Set window to be transparent
     [self.overlayWindow setOpaque:NO];
     [self.overlayWindow setAlphaValue:1.0];
     [self.overlayWindow setBackgroundColor:[NSColor clearColor]];
     
+    // CRITICAL: This makes mouse events pass through to applications below
+    [self.overlayWindow setIgnoresMouseEvents:YES];
+    
     // Get the draw view from the overlay window
-    DrawView *drawView = (DrawView *)[self.overlayWindow contentView];
+    self.drawView = (DrawView *)[self.overlayWindow contentView];
     
     // Create and show the control panel
-    self.controlPanel = [[ControlPanel alloc] initWithDrawView:drawView];
+    self.controlPanel = [[ControlPanel alloc] initWithDrawView:self.drawView];
     [self.controlPanel makeKeyAndOrderFront:nil];
     
     // Show the overlay window
     [self.overlayWindow makeKeyAndOrderFront:nil];
     
-    // Connect overlay window with TabletApplication
-    TabletApplication *app = (TabletApplication *)NSApp;
-    [app setOverlayWindow:self.overlayWindow];
+    // Set up global event monitor to catch tablet events
+    NSEventMask eventMask = NSLeftMouseDownMask | 
+                            NSLeftMouseUpMask | 
+                            NSLeftMouseDraggedMask;
+    
+    eventMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:eventMask 
+                                                         handler:^(NSEvent *event) {
+        // Only handle tablet events
+        if ([event isTabletPointerEvent]) {
+            NSLog(@"Global monitor captured tablet event: %ld", (long)[event type]);
+            
+            // Forward to our drawing view
+            [self.drawView mouseEvent:event];
+        }
+    }];
     
     // Register for notifications
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -48,12 +62,20 @@
 - (void)applicationWillTerminate:(NSNotification *)aNotification {
     // Clean up by removing notification observers
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    
+    // Remove event monitor
+    [NSEvent removeMonitor:eventMonitor];
 }
 
 // Clean up memory
 - (void)dealloc {
-    [self.overlayWindow release];
-    [self.controlPanel release];
+    if (eventMonitor) {
+        [NSEvent removeMonitor:eventMonitor];
+    }
+    
+    [overlayWindow release];
+    [controlPanel release];
+    [drawView release];
     [super dealloc];
 }
 

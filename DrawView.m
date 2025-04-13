@@ -47,10 +47,12 @@
     }
 }
 
-// This special method helps handle events that aren't automatically forwarded to first responder
+// This special method handles events forwarded from the global event monitor
 - (void)mouseEvent:(NSEvent *)event {
     // Handle event based on its type
     NSInteger type = [event type];
+    
+    NSLog(@"DrawView received forwarded event from monitor, type: %ld", (long)type);
     
     if (type == 1) { // NSLeftMouseDown
         [self mouseDown:event];
