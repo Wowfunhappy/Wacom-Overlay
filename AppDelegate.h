@@ -6,6 +6,8 @@
 
 @interface AppDelegate : NSObject <NSApplicationDelegate> {
     id eventMonitor;
+    CFMachPortRef eventTap;
+    CFRunLoopSourceRef runLoopSource;
 }
 
 @property (nonatomic, retain) OverlayWindow *overlayWindow;
