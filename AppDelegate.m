@@ -39,15 +39,23 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             // Check for Cmd+Z (undo)
             if ([characters isEqualToString:@"z"] && !(flags & NSShiftKeyMask)) {
                 NSLog(@"Cmd+Z detected - forwarding to draw view");
-                [appDelegate.drawView undo];
-                return NULL; // Consume the event
+                if ([appDelegate.drawView canUndo]) {
+                    [appDelegate.drawView undo];
+                    return NULL; // Consume the event only if we handled it
+                } else {
+                    NSLog(@"Nothing to undo - passing event through");
+                }
             }
             
             // Check for Cmd+Shift+Z (redo)
             if ((flags & NSShiftKeyMask) && ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"])) {
                 NSLog(@"Cmd+Shift+Z detected - forwarding to draw view");
-                [appDelegate.drawView redo];
-                return NULL; // Consume the event
+                if ([appDelegate.drawView canRedo]) {
+                    [appDelegate.drawView redo];
+                    return NULL; // Consume the event only if we handled it
+                } else {
+                    NSLog(@"Nothing to redo - passing event through");
+                }
             }
         }
     }

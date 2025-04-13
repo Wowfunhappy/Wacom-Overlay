@@ -21,5 +21,7 @@
 - (NSPoint)convertScreenPointToView:(NSPoint)screenPoint;
 - (void)undo;
 - (void)redo;
+- (BOOL)canUndo;
+- (BOOL)canRedo;
 
 @end

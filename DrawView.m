@@ -214,10 +214,20 @@
     return YES;
 }
 
+// Check if there's something to undo
+- (BOOL)canUndo {
+    return ([paths count] > 0 && [strokeMarkers count] > 0);
+}
+
+// Check if there's something to redo
+- (BOOL)canRedo {
+    return ([undoPaths count] > 0 && [undoStrokeMarkers count] > 0);
+}
+
 // Undo the last complete stroke
 - (void)undo {
     // Check if there are any paths to undo
-    if ([paths count] > 0 && [strokeMarkers count] > 0) {
+    if ([self canUndo]) {
         // Get the marker for the last stroke
         NSInteger markerIndex = [strokeMarkers count] - 1;
         NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
@@ -265,7 +275,7 @@
           (unsigned long)[undoPaths count], (unsigned long)[undoStrokeMarkers count]);
     
     // Check if there are any paths to redo
-    if ([undoPaths count] > 0 && [undoStrokeMarkers count] > 0) {
+    if ([self canRedo]) {
         // Get the segment count for the stroke to redo
         NSInteger segmentCount = [[undoStrokeMarkers lastObject] integerValue];
         
