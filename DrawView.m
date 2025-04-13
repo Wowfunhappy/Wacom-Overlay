@@ -122,16 +122,30 @@
         // Convert to view coordinates
         NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
         
-        // Use pressure if available to adjust line width
-        if ([event pressure] > 0.0) {
-            float pressureWidth = lineWidth * ([event pressure] * 2.0);
-            [currentPath setLineWidth:MAX(0.5, pressureWidth)];
-            
-            NSLog(@"DrawView: Using pressure: %f, width: %f", [event pressure], pressureWidth);
-        }
+        // Create a segment path for this movement with pressure-sensitive width
+        NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
+        [segmentPath setLineCapStyle:NSRoundLineCapStyle];
+        [segmentPath setLineJoinStyle:NSRoundLineJoinStyle];
         
-        // Add point to the path
-        [currentPath lineToPoint:viewPoint];
+        // Use pressure if available to adjust line width for this segment
+        float segmentWidth = lineWidth;
+        if ([event pressure] > 0.0) {
+            segmentWidth = lineWidth * ([event pressure] * 2.0);
+            segmentWidth = MAX(0.5, segmentWidth);
+            
+            NSLog(@"DrawView: Using pressure: %f, width: %f", [event pressure], segmentWidth);
+        }
+        [segmentPath setLineWidth:segmentWidth];
+        
+        // Create segment from last point to current point
+        [segmentPath moveToPoint:lastPoint];
+        [segmentPath lineToPoint:viewPoint];
+        
+        // Add this segment to our collection
+        [paths addObject:segmentPath];
+        [segmentPath release];
+        
+        // Update last point for next segment
         lastPoint = viewPoint;
         
         NSLog(@"DrawView: Adding point to path: %@", NSStringFromPoint(viewPoint));
@@ -150,14 +164,13 @@
         return;
     }
     
-    // Finish the current path and add it to our list of paths
+    // Release the current path as we now use individual segments
     if (currentPath) {
-        [paths addObject:currentPath];
         [currentPath release];
         currentPath = nil;
         [self setNeedsDisplay:YES];
         
-        NSLog(@"DrawView: Finished path, total paths: %lu", (unsigned long)[paths count]);
+        NSLog(@"DrawView: Finished stroke, total segments: %lu", (unsigned long)[paths count]);
     }
 }
 
