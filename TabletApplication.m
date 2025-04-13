@@ -52,6 +52,17 @@
             }
         }
     }];
+    
+    // Setup a global monitor for keyboard events
+    // NSEventMaskKeyDown would be 1 << 10 on newer macOS versions
+    NSEventMask keyEventMask = 1 << 10;  // NSKeyDown
+    
+    globalKeyEventMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:keyEventMask
+                                                handler:^(NSEvent *event) {
+        NSLog(@"TabletApplication: Global key monitor caught event: keyCode=%lu, chars=%@", 
+             (unsigned long)[event keyCode], [event charactersIgnoringModifiers]);
+        [self handleKeyEvent:event];
+    }];
 }
 
 - (void)tearDownGlobalEventMonitors {
@@ -63,6 +74,11 @@
     if (globalTabletProximityMonitor != nil) {
         [NSEvent removeMonitor:globalTabletProximityMonitor];
         globalTabletProximityMonitor = nil;
+    }
+    
+    if (globalKeyEventMonitor != nil) {
+        [NSEvent removeMonitor:globalKeyEventMonitor];
+        globalKeyEventMonitor = nil;
     }
 }
 
@@ -86,9 +102,67 @@
         // Handle proximity events
         [self handleProximityEvent:theEvent];
     }
+    else if ([theEvent type] == NSKeyDown) {
+        // Handle our special key combinations directly
+        NSUInteger flags = [theEvent modifierFlags];
+        NSString *characters = [theEvent charactersIgnoringModifiers];
+        
+        // In OS X 10.9, we need to use the raw values instead of the constants
+        BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
+        BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
+        BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
+        BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+        BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+        
+        NSLog(@"TabletApplication: Key event in sendEvent - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, chars: %@",
+              isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, characters);
+        
+        if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
+            NSLog(@"TabletApplication: Special key combination detected in sendEvent, forwarding to DrawView");
+            
+            // Forward to DrawView's toggleToNextColor method
+            if (overlayWindow != nil) {
+                DrawView *drawView = (DrawView *)[overlayWindow contentView];
+                if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
+                    [drawView toggleToNextColor];
+                    return; // Don't forward the event
+                }
+            }
+        }
+    }
     
     // Pass all other events (including mouse events) to the standard event system
     [super sendEvent:theEvent];
+}
+
+- (void)handleKeyEvent:(NSEvent *)theEvent {
+    NSLog(@"TabletApplication: Handling key event");
+    
+    // Check for the special key combination: Ctrl+Cmd+Option+Shift+C
+    NSUInteger flags = [theEvent modifierFlags];
+    NSString *characters = [theEvent charactersIgnoringModifiers];
+    
+    // In OS X 10.9, we need to use the raw values instead of the constants
+    BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
+    BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
+    BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
+    BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+    BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+    
+    NSLog(@"TabletApplication: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, chars: %@",
+          isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, characters);
+    
+    if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
+        NSLog(@"TabletApplication: Special key combination detected, forwarding to DrawView");
+        
+        // Forward to DrawView's toggleToNextColor method
+        if (overlayWindow != nil) {
+            DrawView *drawView = (DrawView *)[overlayWindow contentView];
+            if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
+                [drawView toggleToNextColor];
+            }
+        }
+    }
 }
 
 - (void)handleProximityEvent:(NSEvent *)theEvent {

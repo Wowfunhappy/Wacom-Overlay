@@ -14,6 +14,8 @@
     BOOL mErasing;
     NSPoint lastErasePoint;
     BOOL hasLastErasePoint;
+    NSArray *presetColors;
+    NSInteger currentColorIndex;
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
@@ -30,5 +32,6 @@
 - (void)handleProximity:(NSNotification *)proxNotice;
 - (void)eraseStrokeAtPoint:(NSPoint)point;
 - (void)resetEraseTracking;
+- (void)toggleToNextColor;
 
 @end

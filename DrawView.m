@@ -18,7 +18,16 @@
         undoPaths = [[NSMutableArray alloc] init];
         undoPathColors = [[NSMutableArray alloc] init];
         undoStrokeMarkers = [[NSMutableArray alloc] init];
-        self.strokeColor = [NSColor redColor];
+        
+        // Initialize the preset colors
+        presetColors = [[NSArray alloc] initWithObjects:
+                        [NSColor redColor],
+                        [NSColor blueColor],
+                        [NSColor greenColor],
+                        nil];
+        currentColorIndex = 0;
+        self.strokeColor = [presetColors objectAtIndex:currentColorIndex];
+        
         self.lineWidth = 2.0;
         mErasing = NO;
         hasLastErasePoint = NO;
@@ -304,6 +313,36 @@
     return YES;
 }
 
+// Handle key down events for keyboard shortcuts
+- (void)keyDown:(NSEvent *)event {
+    NSUInteger flags = [event modifierFlags];
+    NSString *characters = [event charactersIgnoringModifiers];
+    NSUInteger keyCode = [event keyCode];
+    
+    NSLog(@"DrawView: keyDown detected - keyCode: %lu, chars: '%@', flags: %lx", 
+          (unsigned long)keyCode, characters, (unsigned long)flags);
+    
+    // Check for the special key combination: control+cmd+option+shift+C
+    // Note: We can't detect delete and return as simultaneous key presses in standard key events
+    // In OS X 10.9, we need to use the raw values instead of the constants
+    BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
+    BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
+    BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
+    BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+    BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+    
+    NSLog(@"DrawView: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d",
+          isControlDown, isCommandDown, isOptionDown, isShiftDown, isC);
+    
+    if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
+        NSLog(@"DrawView: Special key combination detected, toggling color");
+        [self toggleToNextColor];
+    } else {
+        // Otherwise, pass the event up the responder chain
+        [super keyDown:event];
+    }
+}
+
 // Check if there's something to undo
 - (BOOL)canUndo {
     return ([paths count] > 0 && [strokeMarkers count] > 0);
@@ -586,6 +625,28 @@
     NSLog(@"DrawView: Reset erase tracking");
 }
 
+- (void)toggleToNextColor {
+    // Increment the color index
+    currentColorIndex = (currentColorIndex + 1) % [presetColors count];
+    
+    // Set the new color
+    self.strokeColor = [presetColors objectAtIndex:currentColorIndex];
+    
+    // Also update the color well in the control panel if there is one
+    NSArray *windows = [NSApp windows];
+    for (NSWindow *window in windows) {
+        if ([[window className] isEqualToString:@"ControlPanel"]) {
+            NSColorWell *colorWell = [window valueForKey:@"colorWell"];
+            if (colorWell) {
+                [colorWell setColor:self.strokeColor];
+            }
+            break;
+        }
+    }
+    
+    NSLog(@"DrawView: Toggled to next color: %@", self.strokeColor);
+}
+
 // Clean up memory
 - (void)dealloc {
     // Remove proximity notification observer
@@ -603,6 +664,7 @@
         [currentPath release];
     }
     [strokeColor release];
+    [presetColors release];
     [super dealloc];
 }
 

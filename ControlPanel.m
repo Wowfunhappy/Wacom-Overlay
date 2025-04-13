@@ -82,7 +82,42 @@
 }
 
 - (void)colorChanged:(id)sender {
-    [drawView setStrokeColor:[colorWell color]];
+    NSColor *selectedColor = [colorWell color];
+    [drawView setStrokeColor:selectedColor];
+    
+    // Update the currentColorIndex variable in DrawView if possible
+    if ([drawView respondsToSelector:@selector(setCurrentColorIndex:)]) {
+        // Try to find the closest matching color in the preset array
+        NSArray *presets = [drawView valueForKey:@"presetColors"];
+        if (presets) {
+            NSInteger bestMatchIndex = 0;
+            CGFloat bestMatchDistance = CGFLOAT_MAX;
+            
+            for (NSInteger i = 0; i < [presets count]; i++) {
+                NSColor *presetColor = [presets objectAtIndex:i];
+                
+                // Convert both colors to RGB space for comparison
+                NSColor *rgb1 = [selectedColor colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+                NSColor *rgb2 = [presetColor colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+                
+                // Calculate a simple color distance
+                CGFloat dr = [rgb1 redComponent] - [rgb2 redComponent];
+                CGFloat dg = [rgb1 greenComponent] - [rgb2 greenComponent];
+                CGFloat db = [rgb1 blueComponent] - [rgb2 blueComponent];
+                CGFloat distance = sqrt(dr*dr + dg*dg + db*db);
+                
+                if (distance < bestMatchDistance) {
+                    bestMatchDistance = distance;
+                    bestMatchIndex = i;
+                }
+            }
+            
+            // If the color is close enough to a preset, update the index
+            if (bestMatchDistance < 0.1) {
+                [drawView setValue:[NSNumber numberWithInteger:bestMatchIndex] forKey:@"currentColorIndex"];
+            }
+        }
+    }
 }
 
 - (void)lineWidthChanged:(id)sender {
