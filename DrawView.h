@@ -2,6 +2,7 @@
 
 @interface DrawView : NSView {
     NSMutableArray *paths;
+    NSMutableArray *pathColors;
     NSBezierPath *currentPath;
     NSColor *strokeColor;
     CGFloat lineWidth;

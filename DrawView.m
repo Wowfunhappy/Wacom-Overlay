@@ -11,6 +11,7 @@
     if (self) {
         // Initialize drawing properties
         paths = [[NSMutableArray alloc] init];
+        pathColors = [[NSMutableArray alloc] init];
         self.strokeColor = [NSColor redColor];
         self.lineWidth = 2.0;
         
@@ -30,19 +31,18 @@
     [[NSColor clearColor] set];
     NSRectFill(dirtyRect);
     
-    // Set the stroke color for all paths
-    [strokeColor set];
-    
-    // Draw all saved paths
-    NSEnumerator *pathEnumerator = [paths objectEnumerator];
-    NSBezierPath *path;
-    
-    while ((path = [pathEnumerator nextObject])) {
+    // Draw all saved paths with their colors
+    for (NSUInteger i = 0; i < [paths count]; i++) {
+        NSBezierPath *path = [paths objectAtIndex:i];
+        NSColor *color = (i < [pathColors count]) ? [pathColors objectAtIndex:i] : strokeColor;
+        
+        [color set];
         [path stroke];
     }
     
     // Draw current path if it exists
     if (currentPath) {
+        [strokeColor set];
         [currentPath stroke];
     }
 }
@@ -143,6 +143,7 @@
         
         // Add this segment to our collection
         [paths addObject:segmentPath];
+        [pathColors addObject:[strokeColor copy]]; // Store current color with path
         [segmentPath release];
         
         // Update last point for next segment
@@ -176,6 +177,7 @@
 
 - (void)clear {
     [paths removeAllObjects];
+    [pathColors removeAllObjects];
     if (currentPath) {
         [currentPath release];
         currentPath = nil;
@@ -202,6 +204,7 @@
 // Clean up memory
 - (void)dealloc {
     [paths release];
+    [pathColors release];
     if (currentPath) {
         [currentPath release];
     }
