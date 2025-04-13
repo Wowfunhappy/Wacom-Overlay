@@ -1,6 +1,7 @@
 #import "TabletApplication.h"
 #import "TabletEvents.h"
 #import "OverlayWindow.h"
+#import "DrawView.h"
 
 @implementation TabletApplication
 
@@ -9,22 +10,27 @@
 }
 
 - (void)sendEvent:(NSEvent *)theEvent {
-    if ([theEvent isEventClassTablet]) {
-        NSLog(@"TabletApplication: Received tablet event: %@", [theEvent description]);
+    // Check if this is a tablet event
+    if ([theEvent isTabletPointerEvent]) {
+        NSLog(@"TabletApplication: Intercepting tablet event: %@", [theEvent description]);
         
-        if ([theEvent isTabletProximityEvent]) {
-            [self handleProximityEvent:theEvent];
+        // Get draw view from our overlay window
+        if (overlayWindow != nil) {
+            DrawView *drawView = (DrawView *)[overlayWindow contentView];
+            
+            // Forward the event to the draw view
+            [drawView mouseEvent:theEvent];
+            
+            // Don't call super for tablet events - this prevents them from reaching other applications
+            return;
         }
-        
-        // Direct tablet events specifically to our overlay window if it's tablet related
-        if (overlayWindow != nil && ([theEvent isTabletPointerEvent] || [theEvent isTabletProximityEvent])) {
-            // For tablet events, send them directly to our window
-            [overlayWindow sendEvent:theEvent];
-            return; // Skip normal event processing
-        }
+    } 
+    else if ([theEvent isTabletProximityEvent]) {
+        // Handle proximity events
+        [self handleProximityEvent:theEvent];
     }
     
-    // Process all other events normally
+    // Pass all other events (including mouse events) to the standard event system
     [super sendEvent:theEvent];
 }
 

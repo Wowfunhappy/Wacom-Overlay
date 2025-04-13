@@ -65,6 +65,16 @@
     }
 }
 
+- (NSPoint)convertScreenPointToView:(NSPoint)screenPoint {
+    // Convert screen coordinates to window coordinates
+    NSPoint windowPoint = [[self window] convertScreenToBase:screenPoint];
+    
+    // Convert window coordinates to view coordinates
+    NSPoint viewPoint = [self convertPoint:windowPoint fromView:nil];
+    
+    return viewPoint;
+}
+
 - (void)mouseDown:(NSEvent *)event {
     // Check if this is a tablet event
     if ([event isTabletPointerEvent]) {
@@ -80,12 +90,17 @@
     [currentPath setLineCapStyle:NSRoundLineCapStyle];
     [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
     
-    // Get the location in view coordinates
-    NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
-    [currentPath moveToPoint:point];
-    lastPoint = point;
+    // Get the screen location
+    NSPoint screenPoint = [NSEvent mouseLocation];
     
-    NSLog(@"DrawView: Starting new path at point: %@", NSStringFromPoint(point));
+    // Convert to view coordinates
+    NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
+    
+    // Start the path
+    [currentPath moveToPoint:viewPoint];
+    lastPoint = viewPoint;
+    
+    NSLog(@"DrawView: Starting new path at point: %@", NSStringFromPoint(viewPoint));
     
     [self setNeedsDisplay:YES];
 }
@@ -101,7 +116,11 @@
     
     // If we have a current path, add a line to it
     if (currentPath) {
-        NSPoint point = [self convertPoint:[event locationInWindow] fromView:nil];
+        // Get the screen location
+        NSPoint screenPoint = [NSEvent mouseLocation];
+        
+        // Convert to view coordinates
+        NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
         
         // Use pressure if available to adjust line width
         if ([event pressure] > 0.0) {
@@ -112,10 +131,10 @@
         }
         
         // Add point to the path
-        [currentPath lineToPoint:point];
-        lastPoint = point;
+        [currentPath lineToPoint:viewPoint];
+        lastPoint = viewPoint;
         
-        NSLog(@"DrawView: Adding point to path: %@", NSStringFromPoint(point));
+        NSLog(@"DrawView: Adding point to path: %@", NSStringFromPoint(viewPoint));
         
         // Redraw
         [self setNeedsDisplay:YES];

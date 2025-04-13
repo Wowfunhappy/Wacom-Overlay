@@ -13,5 +13,6 @@
 
 - (void)clear;
 - (void)mouseEvent:(NSEvent *)event;
+- (NSPoint)convertScreenPointToView:(NSPoint)screenPoint;
 
 @end

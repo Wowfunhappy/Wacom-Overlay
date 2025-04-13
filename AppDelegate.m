@@ -26,6 +26,9 @@
     // CRITICAL: This makes mouse events pass through to applications below
     [self.overlayWindow setIgnoresMouseEvents:YES];
     
+    // Make sure window is always above other windows and gets tablet events
+    [self.overlayWindow setLevel:NSScreenSaverWindowLevel];
+    
     // Get the draw view from the overlay window
     self.drawView = (DrawView *)[self.overlayWindow contentView];
     
@@ -36,7 +39,13 @@
     // Show the overlay window
     [self.overlayWindow makeKeyAndOrderFront:nil];
     
-    // Set up global event monitor to catch tablet events
+    // Connect overlay window with TabletApplication - CRITICAL for intercepting tablet events
+    TabletApplication *app = (TabletApplication *)NSApp;
+    [app setOverlayWindow:self.overlayWindow];
+    
+    NSLog(@"Connected overlay window to TabletApplication for event interception");
+    
+    // We need a global event monitor to catch tablet events even when not in focus
     NSEventMask eventMask = NSLeftMouseDownMask | 
                             NSLeftMouseUpMask | 
                             NSLeftMouseDraggedMask;
@@ -49,6 +58,9 @@
             
             // Forward to our drawing view
             [self.drawView mouseEvent:event];
+            
+            // Eat the event so it doesn't go through to other applications
+            return;
         }
     }];
     
@@ -64,7 +76,9 @@
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     
     // Remove event monitor
-    [NSEvent removeMonitor:eventMonitor];
+    if (eventMonitor) {
+        [NSEvent removeMonitor:eventMonitor];
+    }
 }
 
 // Clean up memory
