@@ -1,5 +1,6 @@
 #import "DrawView.h"
 #import "TabletEvents.h"
+#import "TabletApplication.h"
 
 @implementation DrawView
 
@@ -68,20 +69,60 @@
     
     NSLog(@"DrawView received forwarded event from monitor, type: %ld", (long)type);
     
-    if (type == 1) { // NSLeftMouseDown
-        [self mouseDown:event];
-    }
-    else if (type == 6) { // NSLeftMouseDragged
-        [self mouseDragged:event];
-    }
-    else if (type == 2) { // NSLeftMouseUp
-        [self mouseUp:event];
+    switch (type) {
+        case 1: // NSLeftMouseDown
+            [self mouseDown:event];
+            break;
+            
+        case 6: // NSLeftMouseDragged
+            [self mouseDragged:event];
+            break;
+            
+        case 2: // NSLeftMouseUp
+            [self mouseUp:event];
+            break;
+            
+        case 24: // NSTabletProximity
+            // If we receive a proximity event, it should have already been handled by TabletApplication
+            // but we can explicitly update our erasing status here if needed
+            if ([event isTabletProximityEvent]) {
+                // For OS X 10.9, we need to use the raw value 2 for eraser
+                BOOL isEraser = ([event pointingDeviceType] == 2); // NSPointingDeviceTypeEraser is 2
+                if (isEraser != mErasing) {
+                    mErasing = isEraser;
+                    NSLog(@"DrawView: Eraser state changed to %@", mErasing ? @"ON" : @"OFF");
+                }
+            }
+            break;
+            
+        default:
+            NSLog(@"DrawView: Unhandled event type in mouseEvent: %ld", (long)type);
+            break;
     }
 }
 
 - (NSPoint)convertScreenPointToView:(NSPoint)screenPoint {
+    // If the window is nil (which happens for global event monitoring when the app isn't active),
+    // we need to account for that
+    NSWindow *window = [self window];
+    if (!window) {
+        NSLog(@"DrawView: Warning - window is nil in convertScreenPointToView. Using overlay window.");
+        
+        // Try to get the overlay window from the application
+        TabletApplication *app = (TabletApplication *)[NSApplication sharedApplication];
+        if ([app respondsToSelector:@selector(overlayWindow)]) {
+            window = (NSWindow *)[app performSelector:@selector(overlayWindow)];
+        }
+        
+        // If we still don't have a window, just return the screen point
+        if (!window) {
+            NSLog(@"DrawView: Error - cannot find window for coordinate conversion");
+            return screenPoint;
+        }
+    }
+    
     // Convert screen coordinates to window coordinates
-    NSPoint windowPoint = [[self window] convertScreenToBase:screenPoint];
+    NSPoint windowPoint = [window convertScreenToBase:screenPoint];
     
     // Convert window coordinates to view coordinates
     NSPoint viewPoint = [self convertPoint:windowPoint fromView:nil];
@@ -290,12 +331,13 @@
         [[proxDict objectForKey:kPointerType] getValue:&pointerType];
         
         // Check if it's the eraser end of the pen
-        if (pointerType == 3) { // eEraser (3) from the Wacom.h in ScribbleDemo
+        // Note: the value is 3 in Wacom.h but 2 in NSPointingDeviceType enum
+        if (pointerType == 3 || pointerType == 2) { // Try both values to be safe
             mErasing = YES;
-            NSLog(@"DrawView: Eraser end detected - enabling eraser mode");
+            NSLog(@"DrawView: Eraser end detected - enabling eraser mode (type=%d)", pointerType);
         } else {
             mErasing = NO;
-            NSLog(@"DrawView: Pen tip detected - disabling eraser mode");
+            NSLog(@"DrawView: Pen tip detected - disabling eraser mode (type=%d)", pointerType);
         }
     }
 }

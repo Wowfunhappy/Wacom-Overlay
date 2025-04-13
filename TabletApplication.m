@@ -7,6 +7,63 @@
 
 - (void)setOverlayWindow:(OverlayWindow *)window {
     overlayWindow = window; // No retain - window is owned by AppDelegate
+    
+    // Setup global event monitors once we have a window
+    if (overlayWindow != nil) {
+        [self setupGlobalEventMonitors];
+    }
+}
+
+- (OverlayWindow *)overlayWindow {
+    return overlayWindow;
+}
+
+- (void)setupGlobalEventMonitors {
+    NSLog(@"TabletApplication: Setting up global event monitors");
+    
+    // Setup a global monitor for tablet proximity events
+    // NSEventMaskTabletProximity would be 1 << 24 on newer macOS versions
+    NSEventMask proximityMask = 1 << 24;
+    globalTabletProximityMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:proximityMask
+                                                 handler:^(NSEvent *event) {
+        NSLog(@"TabletApplication: Global proximity monitor caught event");
+        [self handleProximityEvent:event];
+    }];
+    
+    // Setup a global monitor for tablet pointer events (for erasing)
+    // Use legacy constants for OS X 10.9
+    NSEventMask mouseEventMask = (1 << 1) |  // NSLeftMouseDown
+                                 (1 << 6) |  // NSLeftMouseDragged 
+                                 (1 << 2);   // NSLeftMouseUp
+    
+    globalTabletEventMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:mouseEventMask
+                                                 handler:^(NSEvent *event) {
+        // Only handle tablet events, not regular mouse events
+        if ([event isTabletPointerEvent]) {
+            NSLog(@"TabletApplication: Global event monitor caught tablet event");
+            
+            // Get draw view from our overlay window
+            if (overlayWindow != nil) {
+                DrawView *drawView = (DrawView *)[overlayWindow contentView];
+                
+                // Forward events to draw view, which will handle the erasing based on the erasing state
+                // We need to forward both regular and eraser events to maintain proper state
+                [drawView mouseEvent:event];
+            }
+        }
+    }];
+}
+
+- (void)tearDownGlobalEventMonitors {
+    if (globalTabletEventMonitor != nil) {
+        [NSEvent removeMonitor:globalTabletEventMonitor];
+        globalTabletEventMonitor = nil;
+    }
+    
+    if (globalTabletProximityMonitor != nil) {
+        [NSEvent removeMonitor:globalTabletProximityMonitor];
+        globalTabletProximityMonitor = nil;
+    }
 }
 
 - (void)sendEvent:(NSEvent *)theEvent {
@@ -85,6 +142,9 @@
 }
 
 - (void)dealloc {
+    // Clean up our global event monitors
+    [self tearDownGlobalEventMonitors];
+    
     // Don't release overlayWindow - we don't own it
     [super dealloc];
 }
