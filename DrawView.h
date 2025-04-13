@@ -11,10 +11,14 @@
     NSColor *strokeColor;
     CGFloat lineWidth;
     NSPoint lastPoint;
+    BOOL mErasing;
+    NSPoint lastErasePoint;
+    BOOL hasLastErasePoint;
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
 @property (nonatomic, assign) CGFloat lineWidth;
+@property (nonatomic, assign) BOOL erasing;
 
 - (void)clear;
 - (void)mouseEvent:(NSEvent *)event;
@@ -23,5 +27,8 @@
 - (void)redo;
 - (BOOL)canUndo;
 - (BOOL)canRedo;
+- (void)handleProximity:(NSNotification *)proxNotice;
+- (void)eraseStrokeAtPoint:(NSPoint)point;
+- (void)resetEraseTracking;
 
 @end

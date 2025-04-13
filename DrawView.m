@@ -5,6 +5,7 @@
 
 @synthesize strokeColor;
 @synthesize lineWidth;
+@synthesize erasing = mErasing;
 
 - (id)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
@@ -18,12 +19,21 @@
         undoStrokeMarkers = [[NSMutableArray alloc] init];
         self.strokeColor = [NSColor redColor];
         self.lineWidth = 2.0;
+        mErasing = NO;
+        hasLastErasePoint = NO;
+        lastErasePoint = NSZeroPoint;
         
         // Make the view transparent to allow click-through
         [self setWantsLayer:YES];
         
         // Ensure we can receive all events
         [[self window] setAcceptsMouseMovedEvents:YES];
+        
+        // Register for proximity notifications
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                              selector:@selector(handleProximity:)
+                                              name:kProximityNotification
+                                              object:nil];
         
         NSLog(@"DrawView initialized with frame: %@", NSStringFromRect(frame));
     }
@@ -88,17 +98,24 @@
         return;
     }
     
-    // Start a new path
-    currentPath = [[NSBezierPath bezierPath] retain];
-    [currentPath setLineWidth:lineWidth];
-    [currentPath setLineCapStyle:NSRoundLineCapStyle];
-    [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
-    
     // Get the screen location
     NSPoint screenPoint = [NSEvent mouseLocation];
     
     // Convert to view coordinates
     NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
+    
+    // If we're in eraser mode, erase stroke at this point instead of drawing
+    if (mErasing) {
+        NSLog(@"DrawView: Processing eraser action at point: %@", NSStringFromPoint(viewPoint));
+        [self eraseStrokeAtPoint:viewPoint];
+        return;
+    }
+    
+    // Start a new path
+    currentPath = [[NSBezierPath bezierPath] retain];
+    [currentPath setLineWidth:lineWidth];
+    [currentPath setLineCapStyle:NSRoundLineCapStyle];
+    [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
     
     // Start the path
     [currentPath moveToPoint:viewPoint];
@@ -119,6 +136,32 @@
         NSLog(@"DrawView: mouseDragged detected tablet event");
     } else {
         NSLog(@"DrawView: mouseDragged detected regular mouse event, ignoring");
+        return;
+    }
+    
+    // If we're in eraser mode, handle eraser dragging
+    if (mErasing) {
+        // Get the screen location
+        NSPoint screenPoint = [NSEvent mouseLocation];
+        
+        // Convert to view coordinates
+        NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
+        
+        if (!hasLastErasePoint) {
+            lastErasePoint = viewPoint;
+            hasLastErasePoint = YES;
+        } else {
+            // Calculate distance from last erase point
+            CGFloat dx = viewPoint.x - lastErasePoint.x;
+            CGFloat dy = viewPoint.y - lastErasePoint.y;
+            CGFloat distance = sqrt(dx*dx + dy*dy);
+            
+            // Only process erase if we've moved enough distance (to avoid rapid erasures)
+            if (distance > 10.0) {
+                [self eraseStrokeAtPoint:viewPoint];
+                lastErasePoint = viewPoint;
+            }
+        }
         return;
     }
     
@@ -173,6 +216,12 @@
         return;
     }
     
+    // If we're in eraser mode, reset tracking variables
+    if (mErasing) {
+        [self resetEraseTracking];
+        return;
+    }
+    
     // Release the current path as we now use individual segments
     if (currentPath) {
         [currentPath release];
@@ -222,6 +271,162 @@
 // Check if there's something to redo
 - (BOOL)canRedo {
     return ([undoPaths count] > 0 && [undoStrokeMarkers count] > 0);
+}
+
+// Handle proximity notification from tablet
+- (void)handleProximity:(NSNotification *)proxNotice {
+    NSDictionary *proxDict = [proxNotice userInfo];
+    UInt8 enterProximity;
+    UInt8 pointerType;
+    UInt16 pointerID;
+    
+    // Get entering proximity status
+    [[proxDict objectForKey:kEnterProximity] getValue:&enterProximity];
+    [[proxDict objectForKey:kPointerID] getValue:&pointerID];
+    
+    // Only interested in Enter Proximity for 1st concurrent device
+    if (enterProximity != 0 && pointerID == 0) {
+        // Get the pointer type
+        [[proxDict objectForKey:kPointerType] getValue:&pointerType];
+        
+        // Check if it's the eraser end of the pen
+        if (pointerType == 3) { // eEraser (3) from the Wacom.h in ScribbleDemo
+            mErasing = YES;
+            NSLog(@"DrawView: Eraser end detected - enabling eraser mode");
+        } else {
+            mErasing = NO;
+            NSLog(@"DrawView: Pen tip detected - disabling eraser mode");
+        }
+    }
+}
+
+// Erase the entire stroke that contains the given point
+- (void)eraseStrokeAtPoint:(NSPoint)point {
+    NSLog(@"DrawView: Attempting to erase stroke at point: %@", NSStringFromPoint(point));
+    
+    // Find which stroke the point is in
+    for (NSInteger markerIndex = [strokeMarkers count] - 1; markerIndex >= 0; markerIndex--) {
+        NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
+        NSInteger endIndex;
+        
+        // Determine the end index of this stroke
+        if (markerIndex < [strokeMarkers count] - 1) {
+            endIndex = [[strokeMarkers objectAtIndex:markerIndex + 1] integerValue] - 1;
+        } else {
+            endIndex = [paths count] - 1;
+        }
+        
+        // Check if the point is within any path in this stroke
+        for (NSInteger i = startIndex; i <= endIndex; i++) {
+            NSBezierPath *path = [paths objectAtIndex:i];
+            CGFloat pathWidth = [path lineWidth];
+            
+            // Check if point is near this path segment
+            // We'll use a simple distance check for each path segment
+            if ([self point:point isNearPath:path withinDistance:pathWidth * 2.0]) {
+                NSLog(@"DrawView: Found stroke to erase at marker index: %ld", (long)markerIndex);
+                
+                // Store the stroke info for undo
+                NSInteger segmentCount = endIndex - startIndex + 1;
+                [undoStrokeMarkers addObject:[NSNumber numberWithInteger:segmentCount]];
+                
+                // Move each path segment in the stroke to the undo stack (in reverse to maintain order)
+                for (NSInteger j = endIndex; j >= startIndex; j--) {
+                    // Get the path and color at this index
+                    NSBezierPath *pathToUndo = [[paths objectAtIndex:j] retain];
+                    NSColor *colorToUndo = [[pathColors objectAtIndex:j] retain];
+                    
+                    // Add to undo stacks
+                    [undoPaths addObject:pathToUndo];
+                    [undoPathColors addObject:colorToUndo];
+                    
+                    // Release our retained copies
+                    [pathToUndo release];
+                    [colorToUndo release];
+                }
+                
+                // Remove the segments from the current paths
+                NSRange removeRange = NSMakeRange(startIndex, segmentCount);
+                [paths removeObjectsInRange:removeRange];
+                [pathColors removeObjectsInRange:removeRange];
+                
+                // Update markers after this one (they all need to be shifted)
+                for (NSInteger j = markerIndex + 1; j < [strokeMarkers count]; j++) {
+                    NSInteger oldIndex = [[strokeMarkers objectAtIndex:j] integerValue];
+                    [strokeMarkers replaceObjectAtIndex:j 
+                                            withObject:[NSNumber numberWithInteger:oldIndex - segmentCount]];
+                }
+                
+                // Remove the marker for this stroke
+                [strokeMarkers removeObjectAtIndex:markerIndex];
+                
+                // Redraw
+                [self setNeedsDisplay:YES];
+                
+                NSLog(@"DrawView: Erased stroke with %ld segments", (long)segmentCount);
+                return;
+            }
+        }
+    }
+    
+    NSLog(@"DrawView: No stroke found at point to erase");
+}
+
+// Helper method to check if a point is near a path
+- (BOOL)point:(NSPoint)point isNearPath:(NSBezierPath *)path withinDistance:(CGFloat)distance {
+    // For a simple line segment, we can check distance from the line
+    if ([path elementCount] == 2) { // Simple line with moveToPoint and lineToPoint
+        NSPoint points[2];
+        [path elementAtIndex:0 associatedPoints:&points[0]]; // moveToPoint
+        [path elementAtIndex:1 associatedPoints:&points[1]]; // lineToPoint
+        
+        return [self distanceFromPoint:point toLineWithPoints:points] <= distance;
+    }
+    
+    // For more complex paths, we'll use a simpler check
+    NSRect bounds = [path bounds];
+    NSRect extendedBounds = NSInsetRect(bounds, -distance, -distance);
+    return NSPointInRect(point, extendedBounds);
+}
+
+// Calculate distance from point to line segment
+- (CGFloat)distanceFromPoint:(NSPoint)point toLineWithPoints:(NSPoint[2])linePoints {
+    NSPoint p1 = linePoints[0];
+    NSPoint p2 = linePoints[1];
+    
+    // Vector from p1 to p2
+    CGFloat vx = p2.x - p1.x;
+    CGFloat vy = p2.y - p1.y;
+    
+    // Vector from p1 to point
+    CGFloat wx = point.x - p1.x;
+    CGFloat wy = point.y - p1.y;
+    
+    // Projection of point onto line
+    CGFloat c1 = wx * vx + wy * vy; // Dot product
+    
+    if (c1 <= 0) {
+        // Point is closest to p1
+        return sqrt(wx * wx + wy * wy);
+    }
+    
+    CGFloat c2 = vx * vx + vy * vy; // Length squared
+    
+    if (c2 <= c1) {
+        // Point is closest to p2
+        CGFloat dx = point.x - p2.x;
+        CGFloat dy = point.y - p2.y;
+        return sqrt(dx * dx + dy * dy);
+    }
+    
+    // Point is closest to line itself
+    CGFloat b = c1 / c2;
+    CGFloat px = p1.x + b * vx;
+    CGFloat py = p1.y + b * vy;
+    CGFloat dx = point.x - px;
+    CGFloat dy = point.y - py;
+    
+    return sqrt(dx * dx + dy * dy);
 }
 
 // Undo the last complete stroke
@@ -332,8 +537,20 @@
     return NO;
 }
 
+// Reset the eraser tracking variables
+- (void)resetEraseTracking {
+    hasLastErasePoint = NO;
+    lastErasePoint = NSZeroPoint;
+    NSLog(@"DrawView: Reset erase tracking");
+}
+
 // Clean up memory
 - (void)dealloc {
+    // Remove proximity notification observer
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:kProximityNotification
+                                                  object:nil];
+    
     [paths release];
     [pathColors release];
     [strokeMarkers release];
