@@ -13,6 +13,7 @@
 @synthesize controlPanel;
 @synthesize drawView;
 @synthesize wacomDriverPID;
+@synthesize statusItem;
 
 // Find the Wacom Tablet Driver PID
 - (pid_t)findWacomDriverPID {
@@ -257,6 +258,147 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     NSLog(@"Updated overlay window frame to cover all screens: %@", NSStringFromRect(totalScreensRect));
 }
 
+- (void)setupStatusBarMenu {
+    // Create the status bar item
+    self.statusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
+    
+    // Set the image for the status item
+    NSImage *statusImage = [NSImage imageNamed:@"NSColorPanel"];
+    if (statusImage) {
+        [statusItem setImage:statusImage];
+    } else {
+        // Fallback to text if image not found
+        [statusItem setTitle:@"✏️"];
+    }
+    
+    // Create the menu
+    NSMenu *menu = [[[NSMenu alloc] init] autorelease];
+    
+    // 1. Clear Drawing
+    NSMenuItem *clearItem = [[[NSMenuItem alloc] initWithTitle:@"Clear Drawing" 
+                                                      action:@selector(clearDrawing:) 
+                                               keyEquivalent:@""] autorelease];
+    [clearItem setTarget:self];
+    [menu addItem:clearItem];
+    
+    // 2. Change Color submenu
+    NSMenuItem *colorItem = [[[NSMenuItem alloc] initWithTitle:@"Change Color" 
+                                                      action:nil 
+                                               keyEquivalent:@""] autorelease];
+    colorMenu = [[NSMenu alloc] init]; // Store in our global variable
+    [colorItem setSubmenu:colorMenu];
+    [menu addItem:colorItem];
+    
+    // Will populate color menu dynamically when shown
+    [colorMenu setDelegate:(id<NSMenuDelegate>)self];
+    
+    // 3. Open Controls...
+    NSMenuItem *controlsItem = [[[NSMenuItem alloc] initWithTitle:@"Open Controls..." 
+                                                         action:@selector(openControls:) 
+                                                  keyEquivalent:@""] autorelease];
+    [controlsItem setTarget:self];
+    [menu addItem:controlsItem];
+    
+    // Add separator
+    [menu addItem:[NSMenuItem separatorItem]];
+    
+    // 4. Quit
+    NSMenuItem *quitItem = [[[NSMenuItem alloc] initWithTitle:@"Quit" 
+                                                    action:@selector(terminate:) 
+                                             keyEquivalent:@"q"] autorelease];
+    [quitItem setTarget:NSApp];
+    [menu addItem:quitItem];
+    
+    // Set the menu
+    [statusItem setMenu:menu];
+}
+
+// Open Controls window
+- (void)openControls:(id)sender {
+    if (self.controlPanel) {
+        [self.controlPanel makeKeyAndOrderFront:nil];
+    }
+}
+
+// Clear Drawing action
+- (void)clearDrawing:(id)sender {
+    if (self.drawView) {
+        [self.drawView clear];
+    }
+}
+
+// For storing menu references
+NSMenu *colorMenu = nil;
+
+// Menu delegate method to update color menu
+- (void)menuNeedsUpdate:(NSMenu *)menu {
+    // Check if this is our color submenu
+    if (colorMenu == menu) {
+        // Clear existing items
+        [menu removeAllItems];
+        
+        // Get the current color index and preset colors
+        NSInteger currentIndex = [self.drawView currentColorIndex];
+        NSArray *presetColors = [self.drawView presetColors];
+        
+        // Add menu items for all colors
+        for (NSInteger i = 0; i < [presetColors count]; i++) {
+            NSColor *color = [presetColors objectAtIndex:i];
+            
+            // Create menu item with no title, just showing the color swatch
+            NSMenuItem *item = [[[NSMenuItem alloc] initWithTitle:@"" 
+                                                          action:@selector(changeToColor:) 
+                                                   keyEquivalent:@""] autorelease];
+            [item setTag:i]; // Store color index in tag
+            [item setTarget:self];
+            
+            // Create color swatch
+            NSImage *swatchImage = [[[NSImage alloc] initWithSize:NSMakeSize(16, 16)] autorelease];
+            [swatchImage lockFocus];
+            [color set];
+            NSRectFill(NSMakeRect(0, 0, 16, 16));
+            [[NSColor blackColor] set];
+            NSFrameRect(NSMakeRect(0, 0, 16, 16));
+            [swatchImage unlockFocus];
+            
+            [item setImage:swatchImage];
+            
+            // Add a check mark to the current color
+            if (i == currentIndex) {
+                [item setState:NSOnState];
+            }
+            
+            [menu addItem:item];
+        }
+    }
+}
+
+// Change to selected color
+- (void)changeToColor:(id)sender {
+    NSInteger colorIndex = [sender tag];
+    
+    // Only change if it's a different color than the current one
+    if (colorIndex != [self.drawView currentColorIndex]) {
+        // Set the current color index
+        [self.drawView setCurrentColorIndex:colorIndex];
+        
+        // Update the stroke color
+        NSArray *presetColors = [self.drawView presetColors];
+        if (colorIndex < [presetColors count]) {
+            NSColor *newColor = [presetColors objectAtIndex:colorIndex];
+            [self.drawView setStrokeColor:newColor];
+            
+            // Update color well in control panel if it's open
+            if (self.controlPanel) {
+                NSColorWell *colorWell = [self.controlPanel valueForKey:@"colorWell"];
+                if (colorWell) {
+                    [colorWell setColor:newColor];
+                }
+            }
+        }
+    }
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
     // Find the Wacom driver PID
     wacomDriverPID = [self findWacomDriverPID];
@@ -284,9 +426,8 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     // Get the draw view from the overlay window
     self.drawView = (DrawView *)[self.overlayWindow contentView];
     
-    // Create and show the control panel
+    // Create the control panel but don't show it by default
     self.controlPanel = [[ControlPanel alloc] initWithDrawView:self.drawView];
-    [self.controlPanel makeKeyAndOrderFront:nil];
     
     // Show the overlay window
     [self.overlayWindow makeKeyAndOrderFront:nil];
@@ -294,6 +435,9 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     // Connect overlay window with TabletApplication
     TabletApplication *app = (TabletApplication *)NSApp;
     [app setOverlayWindow:self.overlayWindow];
+    
+    // Setup status bar menu
+    [self setupStatusBarMenu];
     
     // Register for screen configuration change notifications
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -407,6 +551,8 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     [overlayWindow release];
     [controlPanel release];
     [drawView release];
+    [statusItem release];
+    [colorMenu release];
     [super dealloc];
 }
 

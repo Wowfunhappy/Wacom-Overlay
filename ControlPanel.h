@@ -4,10 +4,8 @@
 @interface ControlPanel : NSWindow {
     DrawView *drawView;
     
-    NSButton *clearButton;
     NSColorWell *colorWell;
     NSSlider *lineWidthSlider;
-    NSButton *quitButton;
     
     NSColorWell *preset1ColorWell;
     NSColorWell *preset2ColorWell;

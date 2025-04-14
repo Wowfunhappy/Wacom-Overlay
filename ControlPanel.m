@@ -4,7 +4,7 @@
 @implementation ControlPanel
 
 - (id)initWithDrawView:(DrawView *)aDrawView {
-    NSRect frame = NSMakeRect(0, 0, 300, 220);  // Original height without smoothing controls
+    NSRect frame = NSMakeRect(0, 0, 300, 180);  // Reduced height since we removed buttons
     self = [super initWithContentRect:frame
                             styleMask:1 | 2 // NSTitledWindowMask | NSClosableWindowMask
                               backing:NSBackingStoreBuffered
@@ -20,16 +20,10 @@
         NSView *contentView = [[NSView alloc] initWithFrame:frame];
         [self setContentView:contentView];
         
-        // Create Clear button
-        clearButton = [[NSButton alloc] initWithFrame:NSMakeRect(20, 180, 120, 24)];
-        [clearButton setTitle:@"Clear Drawing"];
-        [clearButton setBezelStyle:NSRoundedBezelStyle];
-        [clearButton setTarget:self];
-        [clearButton setAction:@selector(clearButtonClicked:)];
-        [contentView addSubview:clearButton];
+        // Clear button no longer needed as it's in the menu bar now
         
         // Create Current Color label
-        NSTextField *colorLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 150, 80, 17)];
+        NSTextField *colorLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 140, 80, 17)];
         [colorLabel setStringValue:@"Color:"];
         [colorLabel setBezeled:NO];
         [colorLabel setDrawsBackground:NO];
@@ -38,14 +32,14 @@
         [contentView addSubview:colorLabel];
         
         // Create Color well
-        colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(100, 145, 44, 23)];
+        colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(100, 135, 44, 23)];
         [colorWell setColor:[drawView strokeColor]];
         [colorWell setTarget:self];
         [colorWell setAction:@selector(colorChanged:)];
         [contentView addSubview:colorWell];
         
         // Create Line Width label
-        NSTextField *lineWidthLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 120, 80, 17)];
+        NSTextField *lineWidthLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 110, 80, 17)];
         [lineWidthLabel setStringValue:@"Line Width:"];
         [lineWidthLabel setBezeled:NO];
         [lineWidthLabel setDrawsBackground:NO];
@@ -54,7 +48,7 @@
         [contentView addSubview:lineWidthLabel];
         
         // Create Line Width slider
-        lineWidthSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 120, 180, 17)];
+        lineWidthSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 110, 180, 17)];
         [lineWidthSlider setMinValue:0.5];
         [lineWidthSlider setMaxValue:20.0];
         [lineWidthSlider setDoubleValue:[drawView lineWidth]];
@@ -63,7 +57,7 @@
         [contentView addSubview:lineWidthSlider];
         
         // Create Preset Colors label
-        NSTextField *presetsLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 90, 260, 17)];
+        NSTextField *presetsLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 80, 260, 17)];
         [presetsLabel setStringValue:@"Preset Colors:"];
         [presetsLabel setBezeled:NO];
         [presetsLabel setDrawsBackground:NO];
@@ -76,21 +70,21 @@
         NSArray *presetColors = [drawView presetColors];
         
         // Create color wells for each preset
-        preset1ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(60, 60, 44, 23)];
+        preset1ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(60, 50, 44, 23)];
         [preset1ColorWell setColor:[presetColors objectAtIndex:0]];
         [preset1ColorWell setTarget:self];
         [preset1ColorWell setAction:@selector(presetColorChanged:)];
         [preset1ColorWell setTag:0]; // Use tag to store the preset index
         [contentView addSubview:preset1ColorWell];
         
-        preset2ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(130, 60, 44, 23)];
+        preset2ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(130, 50, 44, 23)];
         [preset2ColorWell setColor:[presetColors objectAtIndex:1]];
         [preset2ColorWell setTarget:self];
         [preset2ColorWell setAction:@selector(presetColorChanged:)];
         [preset2ColorWell setTag:1]; // Use tag to store the preset index
         [contentView addSubview:preset2ColorWell];
         
-        preset3ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(200, 60, 44, 23)];
+        preset3ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(200, 50, 44, 23)];
         [preset3ColorWell setColor:[presetColors objectAtIndex:2]];
         [preset3ColorWell setTarget:self];
         [preset3ColorWell setAction:@selector(presetColorChanged:)];
@@ -102,7 +96,7 @@
                             preset1ColorWell, preset2ColorWell, preset3ColorWell, nil];
         
         // Add preset labels
-        NSTextField *preset1Label = [[NSTextField alloc] initWithFrame:NSMakeRect(60, 40, 44, 17)];
+        NSTextField *preset1Label = [[NSTextField alloc] initWithFrame:NSMakeRect(60, 30, 44, 17)];
         [preset1Label setStringValue:@"1"];
         [preset1Label setBezeled:NO];
         [preset1Label setDrawsBackground:NO];
@@ -112,7 +106,7 @@
         [contentView addSubview:preset1Label];
         [preset1Label release];
         
-        NSTextField *preset2Label = [[NSTextField alloc] initWithFrame:NSMakeRect(130, 40, 44, 17)];
+        NSTextField *preset2Label = [[NSTextField alloc] initWithFrame:NSMakeRect(130, 30, 44, 17)];
         [preset2Label setStringValue:@"2"];
         [preset2Label setBezeled:NO];
         [preset2Label setDrawsBackground:NO];
@@ -122,7 +116,7 @@
         [contentView addSubview:preset2Label];
         [preset2Label release];
         
-        NSTextField *preset3Label = [[NSTextField alloc] initWithFrame:NSMakeRect(200, 40, 44, 17)];
+        NSTextField *preset3Label = [[NSTextField alloc] initWithFrame:NSMakeRect(200, 30, 44, 17)];
         [preset3Label setStringValue:@"3"];
         [preset3Label setBezeled:NO];
         [preset3Label setDrawsBackground:NO];
@@ -132,13 +126,7 @@
         [contentView addSubview:preset3Label];
         [preset3Label release];
         
-        // Create Quit button
-        quitButton = [[NSButton alloc] initWithFrame:NSMakeRect(180, 180, 100, 24)];
-        [quitButton setTitle:@"Quit"];
-        [quitButton setBezelStyle:NSRoundedBezelStyle];
-        [quitButton setTarget:self];
-        [quitButton setAction:@selector(quitButtonClicked:)];
-        [contentView addSubview:quitButton];
+        // Quit button no longer needed as it's in the menu bar now
         
         // Center window on screen
         [self center];
@@ -235,10 +223,8 @@
 - (void)dealloc {
     [drawView release];
     [presetColorWells release];
-    [clearButton release];
     [colorWell release];
     [lineWidthSlider release];
-    [quitButton release];
     [preset1ColorWell release];
     [preset2ColorWell release];
     [preset3ColorWell release];
