@@ -237,9 +237,35 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     self.statusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
     
     // Set the image for the status item
-    NSImage *statusImage = [NSImage imageNamed:@"menuIcon"]; // Replace with your custom icon name
+    NSString *menuIconPath = [[NSBundle mainBundle] pathForResource:@"menuIcon" ofType:@"png"];
+    NSImage *statusImage = nil;
+    
+    if (menuIconPath) {
+        statusImage = [[[NSImage alloc] initWithContentsOfFile:menuIconPath] autorelease];
+    }
+    
     if (statusImage) {
-        [statusItem setImage:statusImage];
+        // First, create a proper template image that works with menu bar
+        NSImage *templateImage = [[[NSImage alloc] initWithSize:NSMakeSize(18, 18)] autorelease];
+        
+        [templateImage lockFocus];
+        
+        // Create a mask-friendly version (black and transparent only)
+        [[NSColor blackColor] set];
+        
+        // Draw the original image as black silhouette
+        [statusImage drawAtPoint:NSZeroPoint fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0];
+        
+        [templateImage unlockFocus];
+        
+        // Mark as template image (macOS will automatically invert when selected)
+        [templateImage setTemplate:YES];
+        
+        // Set as the status item image
+        [statusItem setImage:templateImage];
+        
+        // Still enable highlight mode just to be sure
+        [statusItem setHighlightMode:YES];
     } else {
         // Fallback to text if image not found
         [statusItem setTitle:@"✏️"];
