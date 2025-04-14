@@ -27,7 +27,7 @@
     BOOL isStrokeSelected;
     BOOL isDraggingStroke;
     NSPoint dragStartPoint;
-    // Removing debug visualization arrays
+    NSMutableArray *relatedStrokeIndices; // For tracking connected strokes (same color, intersecting)
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
@@ -55,6 +55,7 @@
 - (NSInteger)findStrokeAtPoint:(NSPoint)point;
 - (void)moveSelectedStroke:(NSPoint)offset;
 - (BOOL)shouldAllowMouseEvent:(NSEvent *)event atPoint:(NSPoint)point;
-// Removed debug visualization methods
+- (void)findRelatedStrokes:(NSInteger)strokeIndex;
+- (BOOL)doStrokesIntersect:(NSInteger)strokeIndex1 strokeIndex2:(NSInteger)strokeIndex2;
 
 @end

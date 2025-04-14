@@ -41,7 +41,7 @@
         isStrokeSelected = NO;
         isDraggingStroke = NO;
         dragStartPoint = NSZeroPoint;
-        // Removed debug visualization initialization
+        relatedStrokeIndices = [[NSMutableArray alloc] init];
         
         // Make the view transparent to allow click-through
         [self setWantsLayer:YES];
@@ -70,20 +70,40 @@
         NSBezierPath *path = [paths objectAtIndex:i];
         NSColor *color = (i < [pathColors count]) ? [pathColors objectAtIndex:i] : strokeColor;
         
-        // Check if this path belongs to the selected stroke
-        if (isStrokeSelected && selectedStrokeIndex >= 0 && selectedStrokeIndex < [strokeMarkers count]) {
-            NSInteger startIndex = [[strokeMarkers objectAtIndex:selectedStrokeIndex] integerValue];
-            NSInteger endIndex;
-            
-            // Determine the end index of the selected stroke
-            if (selectedStrokeIndex < [strokeMarkers count] - 1) {
-                endIndex = [[strokeMarkers objectAtIndex:selectedStrokeIndex + 1] integerValue] - 1;
-            } else {
-                endIndex = [paths count] - 1;
+        // Check if this path belongs to the selected stroke or related strokes
+        if (isStrokeSelected) {
+            // If related strokes array is empty, find them now
+            if ([relatedStrokeIndices count] == 0 && selectedStrokeIndex >= 0) {
+                [self findRelatedStrokes:selectedStrokeIndex];
             }
             
-            // If this path is part of the selected stroke, draw it slightly highlighted
-            if (i >= startIndex && i <= endIndex) {
+            // Check if this path belongs to any selected or related stroke
+            BOOL isPathSelected = NO;
+            
+            for (NSNumber *relatedIndexNum in relatedStrokeIndices) {
+                NSInteger relatedIndex = [relatedIndexNum integerValue];
+                
+                if (relatedIndex >= 0 && relatedIndex < [strokeMarkers count]) {
+                    NSInteger startIndex = [[strokeMarkers objectAtIndex:relatedIndex] integerValue];
+                    NSInteger endIndex;
+                    
+                    // Determine the end index of the related stroke
+                    if (relatedIndex < [strokeMarkers count] - 1) {
+                        endIndex = [[strokeMarkers objectAtIndex:relatedIndex + 1] integerValue] - 1;
+                    } else {
+                        endIndex = [paths count] - 1;
+                    }
+                    
+                    // Check if this path belongs to the related stroke
+                    if (i >= startIndex && i <= endIndex) {
+                        isPathSelected = YES;
+                        break;
+                    }
+                }
+            }
+            
+            // If this path is part of any selected or related stroke, draw it with highlighting
+            if (isPathSelected) {
                 // Store the original line width
                 CGFloat originalWidth = [path lineWidth];
                 
@@ -254,6 +274,10 @@
                         isStrokeSelected = YES;
                         isDraggingStroke = YES;
                         dragStartPoint = viewPoint;
+                        
+                        // Find all related strokes (same color and intersecting)
+                        [self findRelatedStrokes:markerIndex];
+                        
                         foundStroke = YES;
                         break;
                     }
@@ -271,6 +295,7 @@
                 isStrokeSelected = NO;
                 selectedStrokeIndex = -1;
                 isDraggingStroke = NO;
+                [relatedStrokeIndices removeAllObjects];
             }
         }
     }
@@ -557,30 +582,42 @@
         return;
     }
     
-    NSInteger startIndex = [[strokeMarkers objectAtIndex:selectedStrokeIndex] integerValue];
-    NSInteger endIndex;
-    
-    // Determine the end index of this stroke
-    if (selectedStrokeIndex < [strokeMarkers count] - 1) {
-        endIndex = [[strokeMarkers objectAtIndex:selectedStrokeIndex + 1] integerValue] - 1;
-    } else {
-        endIndex = [paths count] - 1;
+    // If there are no related strokes found yet, find them now
+    if ([relatedStrokeIndices count] == 0) {
+        [self findRelatedStrokes:selectedStrokeIndex];
     }
     
-    // Move each path segment in the stroke
-    for (NSInteger i = startIndex; i <= endIndex; i++) {
-        NSBezierPath *path = [paths objectAtIndex:i];
+    // Move all related strokes
+    for (NSNumber *strokeIndexNum in relatedStrokeIndices) {
+        NSInteger strokeIndex = [strokeIndexNum integerValue];
         
-        // Create a transform to move the path
-        NSAffineTransform *transform = [NSAffineTransform transform];
-        [transform translateXBy:offset.x yBy:offset.y];
+        // Skip invalid indices
+        if (strokeIndex < 0 || strokeIndex >= [strokeMarkers count]) {
+            continue;
+        }
         
-        // Apply the transform to the path
-        [path transformUsingAffineTransform:transform];
+        NSInteger startIndex = [[strokeMarkers objectAtIndex:strokeIndex] integerValue];
+        NSInteger endIndex;
+        
+        // Determine the end index of this stroke
+        if (strokeIndex < [strokeMarkers count] - 1) {
+            endIndex = [[strokeMarkers objectAtIndex:strokeIndex + 1] integerValue] - 1;
+        } else {
+            endIndex = [paths count] - 1;
+        }
+        
+        // Move each path segment in the stroke
+        for (NSInteger i = startIndex; i <= endIndex; i++) {
+            NSBezierPath *path = [paths objectAtIndex:i];
+            
+            // Create a transform to move the path
+            NSAffineTransform *transform = [NSAffineTransform transform];
+            [transform translateXBy:offset.x yBy:offset.y];
+            
+            // Apply the transform to the path
+            [path transformUsingAffineTransform:transform];
+        }
     }
-    
-    NSLog(@"DrawView: Moved stroke from index %ld to %ld by offset (%f, %f)", 
-          (long)startIndex, (long)endIndex, offset.x, offset.y);
 }
 
 // Erase the entire stroke that contains the given point
@@ -975,7 +1012,7 @@
     [strokeColor release];
     [presetColors release];
     [pointBuffer release];
-    // Removed debug visualization releases
+    [relatedStrokeIndices release];
     [super dealloc];
 }
 
@@ -1029,6 +1066,112 @@
 }
 
 // Removed debug visualization method
+
+// Find all strokes that are related to the given stroke
+// Related strokes are those with the same color and that intersect
+- (void)findRelatedStrokes:(NSInteger)strokeIndex {
+    // Clear any existing related strokes
+    [relatedStrokeIndices removeAllObjects];
+    
+    // Add the selected stroke itself
+    [relatedStrokeIndices addObject:[NSNumber numberWithInteger:strokeIndex]];
+    
+    // If invalid stroke index, just return
+    if (strokeIndex < 0 || strokeIndex >= [strokeMarkers count]) {
+        return;
+    }
+    
+    // Get the color of the selected stroke
+    NSInteger startIndexSelected = [[strokeMarkers objectAtIndex:strokeIndex] integerValue];
+    NSColor *selectedColor = nil;
+    
+    if (startIndexSelected < [pathColors count]) {
+        selectedColor = [pathColors objectAtIndex:startIndexSelected];
+    }
+    
+    // If we can't determine the color, we can't find related strokes
+    if (!selectedColor) {
+        return;
+    }
+    
+    // Check all other strokes for color and intersection
+    for (NSInteger i = 0; i < [strokeMarkers count]; i++) {
+        // Skip the stroke itself
+        if (i == strokeIndex) {
+            continue;
+        }
+        
+        // Check if this stroke has the same color
+        NSInteger startIndex = [[strokeMarkers objectAtIndex:i] integerValue];
+        if (startIndex >= [pathColors count]) {
+            continue;
+        }
+        
+        NSColor *color = [pathColors objectAtIndex:startIndex];
+        
+        // If colors match, check for intersection
+        if ([color isEqual:selectedColor] && [self doStrokesIntersect:strokeIndex strokeIndex2:i]) {
+            [relatedStrokeIndices addObject:[NSNumber numberWithInteger:i]];
+        }
+    }
+}
+
+// Check if two strokes intersect
+- (BOOL)doStrokesIntersect:(NSInteger)strokeIndex1 strokeIndex2:(NSInteger)strokeIndex2 {
+    // Get bounds of first stroke
+    NSInteger startIndex1 = [[strokeMarkers objectAtIndex:strokeIndex1] integerValue];
+    NSInteger endIndex1;
+    
+    if (strokeIndex1 < [strokeMarkers count] - 1) {
+        endIndex1 = [[strokeMarkers objectAtIndex:strokeIndex1 + 1] integerValue] - 1;
+    } else {
+        endIndex1 = [paths count] - 1;
+    }
+    
+    // Get bounds of second stroke
+    NSInteger startIndex2 = [[strokeMarkers objectAtIndex:strokeIndex2] integerValue];
+    NSInteger endIndex2;
+    
+    if (strokeIndex2 < [strokeMarkers count] - 1) {
+        endIndex2 = [[strokeMarkers objectAtIndex:strokeIndex2 + 1] integerValue] - 1;
+    } else {
+        endIndex2 = [paths count] - 1;
+    }
+    
+    // Calculate overall bounds for each stroke
+    NSRect bounds1 = NSZeroRect;
+    BOOL first1 = YES;
+    
+    for (NSInteger i = startIndex1; i <= endIndex1; i++) {
+        NSBezierPath *path = [paths objectAtIndex:i];
+        if (first1) {
+            bounds1 = [path bounds];
+            first1 = NO;
+        } else {
+            bounds1 = NSUnionRect(bounds1, [path bounds]);
+        }
+    }
+    
+    NSRect bounds2 = NSZeroRect;
+    BOOL first2 = YES;
+    
+    for (NSInteger i = startIndex2; i <= endIndex2; i++) {
+        NSBezierPath *path = [paths objectAtIndex:i];
+        if (first2) {
+            bounds2 = [path bounds];
+            first2 = NO;
+        } else {
+            bounds2 = NSUnionRect(bounds2, [path bounds]);
+        }
+    }
+    
+    // Add a small margin to the bounds for better intersection detection
+    bounds1 = NSInsetRect(bounds1, -5, -5);
+    bounds2 = NSInsetRect(bounds2, -5, -5);
+    
+    // Check if the bounds intersect
+    return NSIntersectsRect(bounds1, bounds2);
+}
 
 #pragma mark - Color Persistence
 
