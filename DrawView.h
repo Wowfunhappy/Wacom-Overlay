@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import "AppDelegate.h"
 
 @interface DrawView : NSView {
     NSMutableArray *paths;

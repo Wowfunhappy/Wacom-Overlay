@@ -2,6 +2,7 @@
 #import "TabletEvents.h"
 #import "OverlayWindow.h"
 #import "DrawView.h"
+#import "AppDelegate.h"
 
 @implementation TabletApplication
 
@@ -103,7 +104,101 @@
         [self handleProximityEvent:theEvent];
     }
     else if ([theEvent type] == NSKeyDown) {
-        // Handle our special key combinations directly
+        // Handle our special key combinations only if they come from the Wacom tablet
+        
+        // Get the CGEvent from the NSEvent to check the source
+        CGEventRef cgEvent = [theEvent CGEvent];
+        pid_t eventSourcePID = CGEventGetIntegerValueField(cgEvent, kCGEventSourceUnixProcessID);
+        
+        // Get the AppDelegate to access the Wacom driver PID
+        AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
+        pid_t wacomDriverPID = [[appDelegate valueForKey:@"wacomDriverPID"] intValue];
+        
+        // Only process keyboard events from the Wacom driver
+        if (wacomDriverPID != 0 && eventSourcePID == wacomDriverPID) {
+            NSLog(@"TabletApplication: Keyboard event from Wacom driver detected");
+            
+            NSUInteger flags = [theEvent modifierFlags];
+            NSString *characters = [theEvent charactersIgnoringModifiers];
+            
+            // In OS X 10.9, we need to use the raw values instead of the constants
+            BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
+            BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
+            BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
+            BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+            BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+            BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
+            
+            NSLog(@"TabletApplication: Key event in sendEvent - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, IsZ: %d, chars: %@",
+                  isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, isZ, characters);
+            
+            // Make sure the overlay window is frontmost
+            if (overlayWindow != nil) {
+                [overlayWindow orderFront:nil];
+                DrawView *drawView = (DrawView *)[overlayWindow contentView];
+                
+                // Handle color toggle
+                if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
+                    NSLog(@"TabletApplication: Special color toggle detected in sendEvent");
+                    if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
+                        [drawView toggleToNextColor];
+                        return; // Don't forward the event
+                    }
+                }
+                
+                // Handle undo shortcut
+                if (isCommandDown && !isShiftDown && isZ) {
+                    NSLog(@"TabletApplication: Undo command detected in sendEvent");
+                    if ([drawView respondsToSelector:@selector(canUndo)] && 
+                        [drawView respondsToSelector:@selector(undo)]) {
+                        if ([drawView canUndo]) {
+                            [drawView undo];
+                        } else {
+                            NSLog(@"TabletApplication: Nothing to undo - but still intercepting event");
+                        }
+                        return; // Always intercept the event
+                    }
+                }
+                
+                // Handle redo shortcut
+                if (isCommandDown && isShiftDown && isZ) {
+                    NSLog(@"TabletApplication: Redo command detected in sendEvent");
+                    if ([drawView respondsToSelector:@selector(canRedo)] && 
+                        [drawView respondsToSelector:@selector(redo)]) {
+                        if ([drawView canRedo]) {
+                            [drawView redo];
+                        } else {
+                            NSLog(@"TabletApplication: Nothing to redo - but still intercepting event");
+                        }
+                        return; // Always intercept the event
+                    }
+                }
+            }
+        } else {
+            NSLog(@"TabletApplication: Keyboard event not from Wacom tablet - passing through");
+        }
+    }
+    
+    // Pass all other events (including mouse events) to the standard event system
+    [super sendEvent:theEvent];
+}
+
+- (void)handleKeyEvent:(NSEvent *)theEvent {
+    NSLog(@"TabletApplication: Handling key event");
+    
+    // Get the CGEvent from the NSEvent to check the source
+    CGEventRef cgEvent = [theEvent CGEvent];
+    pid_t eventSourcePID = CGEventGetIntegerValueField(cgEvent, kCGEventSourceUnixProcessID);
+    
+    // Get the AppDelegate to access the Wacom driver PID
+    AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
+    pid_t wacomDriverPID = [[appDelegate valueForKey:@"wacomDriverPID"] intValue];
+    
+    // Only process keyboard events from the Wacom driver
+    if (wacomDriverPID != 0 && eventSourcePID == wacomDriverPID) {
+        NSLog(@"TabletApplication: Global keyboard event from Wacom driver detected");
+        
+        // Check for the special key combination: Ctrl+Cmd+Option+Shift+C
         NSUInteger flags = [theEvent modifierFlags];
         NSString *characters = [theEvent charactersIgnoringModifiers];
         
@@ -115,105 +210,54 @@
         BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
         BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
         
-        NSLog(@"TabletApplication: Key event in sendEvent - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, IsZ: %d, chars: %@",
+        NSLog(@"TabletApplication: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, IsZ: %d, chars: %@",
               isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, isZ, characters);
         
-        // Make sure the overlay window is frontmost
-        if (overlayWindow != nil) {
+        // First ensure the overlay window is frontmost no matter which space we're on
+        if (overlayWindow != nil && [overlayWindow respondsToSelector:@selector(orderFront:)]) {
             [overlayWindow orderFront:nil];
+        }
+        
+        // Handle all relevant keyboard commands
+        if (overlayWindow != nil) {
             DrawView *drawView = (DrawView *)[overlayWindow contentView];
             
-            // Handle color toggle
+            // Handle the color toggle shortcut
             if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-                NSLog(@"TabletApplication: Special color toggle detected in sendEvent");
+                NSLog(@"TabletApplication: Special color toggle combination detected from Wacom");
                 if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
                     [drawView toggleToNextColor];
-                    return; // Don't forward the event
                 }
             }
             
-            // Handle undo shortcut
+            // Handle undo command
             if (isCommandDown && !isShiftDown && isZ) {
-                NSLog(@"TabletApplication: Undo command detected in sendEvent");
+                NSLog(@"TabletApplication: Undo command detected from Wacom");
                 if ([drawView respondsToSelector:@selector(canUndo)] && 
-                    [drawView respondsToSelector:@selector(undo)] && 
-                    [drawView canUndo]) {
-                    [drawView undo];
-                    return; // Don't forward the event
+                    [drawView respondsToSelector:@selector(undo)]) {
+                    if ([drawView canUndo]) {
+                        [drawView undo];
+                    } else {
+                        NSLog(@"TabletApplication: Nothing to undo - but still intercepting event");
+                    }
                 }
             }
             
-            // Handle redo shortcut
+            // Handle redo command
             if (isCommandDown && isShiftDown && isZ) {
-                NSLog(@"TabletApplication: Redo command detected in sendEvent");
+                NSLog(@"TabletApplication: Redo command detected from Wacom");
                 if ([drawView respondsToSelector:@selector(canRedo)] && 
-                    [drawView respondsToSelector:@selector(redo)] && 
-                    [drawView canRedo]) {
-                    [drawView redo];
-                    return; // Don't forward the event
+                    [drawView respondsToSelector:@selector(redo)]) {
+                    if ([drawView canRedo]) {
+                        [drawView redo];
+                    } else {
+                        NSLog(@"TabletApplication: Nothing to redo - but still intercepting event");
+                    }
                 }
             }
         }
-    }
-    
-    // Pass all other events (including mouse events) to the standard event system
-    [super sendEvent:theEvent];
-}
-
-- (void)handleKeyEvent:(NSEvent *)theEvent {
-    NSLog(@"TabletApplication: Handling key event");
-    
-    // Check for the special key combination: Ctrl+Cmd+Option+Shift+C
-    NSUInteger flags = [theEvent modifierFlags];
-    NSString *characters = [theEvent charactersIgnoringModifiers];
-    
-    // In OS X 10.9, we need to use the raw values instead of the constants
-    BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
-    BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
-    BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
-    BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-    BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
-    BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
-    
-    NSLog(@"TabletApplication: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, IsZ: %d, chars: %@",
-          isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, isZ, characters);
-    
-    // First ensure the overlay window is frontmost no matter which space we're on
-    if (overlayWindow != nil && [overlayWindow respondsToSelector:@selector(orderFront:)]) {
-        [overlayWindow orderFront:nil];
-    }
-    
-    // Handle all relevant keyboard commands
-    if (overlayWindow != nil) {
-        DrawView *drawView = (DrawView *)[overlayWindow contentView];
-        
-        // Handle the color toggle shortcut
-        if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-            NSLog(@"TabletApplication: Special color toggle combination detected");
-            if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
-                [drawView toggleToNextColor];
-            }
-        }
-        
-        // Handle undo command
-        if (isCommandDown && !isShiftDown && isZ) {
-            NSLog(@"TabletApplication: Undo command detected");
-            if ([drawView respondsToSelector:@selector(canUndo)] && 
-                [drawView respondsToSelector:@selector(undo)] && 
-                [drawView canUndo]) {
-                [drawView undo];
-            }
-        }
-        
-        // Handle redo command
-        if (isCommandDown && isShiftDown && isZ) {
-            NSLog(@"TabletApplication: Redo command detected");
-            if ([drawView respondsToSelector:@selector(canRedo)] && 
-                [drawView respondsToSelector:@selector(redo)] && 
-                [drawView canRedo]) {
-                [drawView redo];
-            }
-        }
+    } else {
+        NSLog(@"TabletApplication: Global keyboard event not from Wacom tablet - ignoring");
     }
 }
 

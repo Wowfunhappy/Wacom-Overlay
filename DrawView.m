@@ -466,23 +466,39 @@
     NSLog(@"DrawView: keyDown detected - keyCode: %lu, chars: '%@', flags: %lx", 
           (unsigned long)keyCode, characters, (unsigned long)flags);
     
-    // Check for the special key combination: control+cmd+option+shift+C
-    // Note: We can't detect delete and return as simultaneous key presses in standard key events
-    // In OS X 10.9, we need to use the raw values instead of the constants
-    BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
-    BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
-    BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
-    BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-    BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+    // Get the CGEvent from the NSEvent to check the source
+    CGEventRef cgEvent = [event CGEvent];
+    pid_t eventSourcePID = CGEventGetIntegerValueField(cgEvent, kCGEventSourceUnixProcessID);
     
-    NSLog(@"DrawView: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d",
-          isControlDown, isCommandDown, isOptionDown, isShiftDown, isC);
+    // Get the AppDelegate to access the Wacom driver PID
+    AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
+    pid_t wacomDriverPID = [[appDelegate valueForKey:@"wacomDriverPID"] intValue];
     
-    if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-        NSLog(@"DrawView: Special key combination detected, toggling color");
-        [self toggleToNextColor];
+    // Only process keyboard events from the Wacom driver
+    if (wacomDriverPID != 0 && eventSourcePID == wacomDriverPID) {
+        NSLog(@"DrawView: Keyboard event from Wacom tablet detected");
+        
+        // Check for the special key combination: control+cmd+option+shift+C
+        // Note: We can't detect delete and return as simultaneous key presses in standard key events
+        // In OS X 10.9, we need to use the raw values instead of the constants
+        BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
+        BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
+        BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
+        BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+        BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+        
+        NSLog(@"DrawView: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d",
+              isControlDown, isCommandDown, isOptionDown, isShiftDown, isC);
+        
+        if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
+            NSLog(@"DrawView: Special key combination detected from Wacom, toggling color");
+            [self toggleToNextColor];
+        } else {
+            // Otherwise, pass the event up the responder chain
+            [super keyDown:event];
+        }
     } else {
-        // Otherwise, pass the event up the responder chain
+        NSLog(@"DrawView: Keyboard event not from Wacom tablet - passing through");
         [super keyDown:event];
     }
 }
