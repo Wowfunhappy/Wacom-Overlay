@@ -263,7 +263,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     self.statusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
     
     // Set the image for the status item
-    NSImage *statusImage = [NSImage imageNamed:@"NSColorPanel"];
+    NSImage *statusImage = [NSImage imageNamed:@"menuIcon"]; // Replace with your custom icon name
     if (statusImage) {
         [statusItem setImage:statusImage];
     } else {
