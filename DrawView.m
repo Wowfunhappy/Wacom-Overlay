@@ -1209,8 +1209,9 @@
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceGray();
     
     // Create two separate bitmap contexts to render each stroke
-    CGContextRef bitmap1 = CGBitmapContextCreate(NULL, width, height, 8, width, colorSpace, kCGImageAlphaOnly);
-    CGContextRef bitmap2 = CGBitmapContextCreate(NULL, width, height, 8, width, colorSpace, kCGImageAlphaOnly);
+    // Cast to CGBitmapInfo to avoid enum conversion warning
+    CGContextRef bitmap1 = CGBitmapContextCreate(NULL, width, height, 8, width, colorSpace, (CGBitmapInfo)kCGImageAlphaOnly);
+    CGContextRef bitmap2 = CGBitmapContextCreate(NULL, width, height, 8, width, colorSpace, (CGBitmapInfo)kCGImageAlphaOnly);
     
     if (!bitmap1 || !bitmap2) {
         NSLog(@"Failed to create bitmap contexts for intersection check");
@@ -1365,12 +1366,13 @@
         }
     }
     
-    CGFloat lineWidth = [path lineWidth];
-    if (lineWidth < 1.0) lineWidth = 1.0;
+    // Use a different variable name to avoid shadowing the instance variable
+    CGFloat pathLineWidth = [path lineWidth];
+    if (pathLineWidth < 1.0) pathLineWidth = 1.0;
     
     // If the path has a line width, apply it as a stroke
     CGPathRef strokedPath = CGPathCreateCopyByStrokingPath(
-        cgPath, NULL, lineWidth, kCGLineCapRound, kCGLineJoinRound, 0);
+        cgPath, NULL, pathLineWidth, kCGLineCapRound, kCGLineJoinRound, 0);
     
     CGPathRelease(cgPath);
     return strokedPath;
