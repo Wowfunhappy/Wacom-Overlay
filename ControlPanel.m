@@ -49,8 +49,8 @@
         
         // Create Line Width slider
         lineWidthSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 110, 180, 17)];
-        [lineWidthSlider setMinValue:0.5];
-        [lineWidthSlider setMaxValue:20.0];
+        [lineWidthSlider setMinValue:1];
+        [lineWidthSlider setMaxValue:3.0];
         [lineWidthSlider setDoubleValue:[drawView lineWidth]];
         [lineWidthSlider setTarget:self];
         [lineWidthSlider setAction:@selector(lineWidthChanged:)];
