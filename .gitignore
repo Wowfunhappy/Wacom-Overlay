@@ -1,0 +1,4 @@
+# Compiled files
+*.o
+WacomOverlay
+WacomOverlay.app/
