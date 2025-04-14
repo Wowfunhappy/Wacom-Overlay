@@ -244,8 +244,9 @@
                     NSBezierPath *path = [paths objectAtIndex:i];
                     NSRect bounds = [path bounds];
                     
-                    // Extend the bounds to make selection easier
-                    NSRect extendedBounds = NSInsetRect(bounds, -30, -30);
+                    // Extend the bounds by a reasonable amount for selection
+                    // Adjust this value to control selection sensitivity (smaller = more precise)
+                    NSRect extendedBounds = NSInsetRect(bounds, -3, -3);
                     
                     if (NSPointInRect(viewPoint, extendedBounds)) {
                         // Set this as the selected stroke

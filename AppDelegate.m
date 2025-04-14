@@ -92,7 +92,8 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         }
         // For mouse move, update cursor for hover feedback
         else if (type == kCGEventMouseMoved) {
-            // Check if mouse is over a stroke
+            // For hover detection, use the stroke finding method
+            // This will use the same sensitivity settings as in DrawView
             NSInteger strokeIndex = [drawView findStrokeAtPoint:viewPoint];
             if (strokeIndex >= 0) {
                 [[NSCursor openHandCursor] set];
