@@ -1073,9 +1073,6 @@
     // Clear any existing related strokes
     [relatedStrokeIndices removeAllObjects];
     
-    // Add the selected stroke itself
-    [relatedStrokeIndices addObject:[NSNumber numberWithInteger:strokeIndex]];
-    
     // If invalid stroke index, just return
     if (strokeIndex < 0 || strokeIndex >= [strokeMarkers count]) {
         return;
@@ -1091,13 +1088,34 @@
     
     // If we can't determine the color, we can't find related strokes
     if (!selectedColor) {
+        // At least add the selected stroke itself
+        [relatedStrokeIndices addObject:[NSNumber numberWithInteger:strokeIndex]];
         return;
     }
     
-    // Check all other strokes for color and intersection
+    // Use a recursive approach to find all connected strokes
+    NSMutableArray *processedStrokes = [NSMutableArray array];
+    [self findConnectedStrokes:strokeIndex withColor:selectedColor processedStrokes:processedStrokes];
+}
+
+// Recursively find all connected strokes with the same color
+- (void)findConnectedStrokes:(NSInteger)strokeIndex 
+                   withColor:(NSColor *)selectedColor 
+            processedStrokes:(NSMutableArray *)processedStrokes {
+    
+    // If we've already processed this stroke, skip it
+    if ([processedStrokes containsObject:[NSNumber numberWithInteger:strokeIndex]]) {
+        return;
+    }
+    
+    // Add this stroke to our results and mark as processed
+    [relatedStrokeIndices addObject:[NSNumber numberWithInteger:strokeIndex]];
+    [processedStrokes addObject:[NSNumber numberWithInteger:strokeIndex]];
+    
+    // Find all directly connected strokes
     for (NSInteger i = 0; i < [strokeMarkers count]; i++) {
-        // Skip the stroke itself
-        if (i == strokeIndex) {
+        // Skip if already processed
+        if ([processedStrokes containsObject:[NSNumber numberWithInteger:i]]) {
             continue;
         }
         
@@ -1111,14 +1129,15 @@
         
         // If colors match, check for intersection
         if ([color isEqual:selectedColor] && [self doStrokesIntersect:strokeIndex strokeIndex2:i]) {
-            [relatedStrokeIndices addObject:[NSNumber numberWithInteger:i]];
+            // Recursively find connections from this stroke
+            [self findConnectedStrokes:i withColor:selectedColor processedStrokes:processedStrokes];
         }
     }
 }
 
 // Check if two strokes intersect
 - (BOOL)doStrokesIntersect:(NSInteger)strokeIndex1 strokeIndex2:(NSInteger)strokeIndex2 {
-    // Get bounds of first stroke
+    // Get path indices of first stroke
     NSInteger startIndex1 = [[strokeMarkers objectAtIndex:strokeIndex1] integerValue];
     NSInteger endIndex1;
     
@@ -1128,7 +1147,7 @@
         endIndex1 = [paths count] - 1;
     }
     
-    // Get bounds of second stroke
+    // Get path indices of second stroke
     NSInteger startIndex2 = [[strokeMarkers objectAtIndex:strokeIndex2] integerValue];
     NSInteger endIndex2;
     
@@ -1138,7 +1157,7 @@
         endIndex2 = [paths count] - 1;
     }
     
-    // Calculate overall bounds for each stroke
+    // First do a quick check with overall bounds
     NSRect bounds1 = NSZeroRect;
     BOOL first1 = YES;
     
@@ -1165,12 +1184,160 @@
         }
     }
     
-    // Add a small margin to the bounds for better intersection detection
+    // Add a small margin to the bounds
+    bounds1 = NSInsetRect(bounds1, -1, -1);
+    bounds2 = NSInsetRect(bounds2, -1, -1);
+    
+    // If the overall bounds don't even intersect, strokes definitely don't intersect
+    if (!NSIntersectsRect(bounds1, bounds2)) {
+        return NO;
+    }
+    
+    // For more precise detection, check path segments individually
+    CGFloat closestDistance = CGFLOAT_MAX;
+    
+    // Check each path segment in stroke 1 against each segment in stroke 2
+    for (NSInteger i = startIndex1; i <= endIndex1; i++) {
+        NSBezierPath *path1 = [paths objectAtIndex:i];
+        
+        for (NSInteger j = startIndex2; j <= endIndex2; j++) {
+            NSBezierPath *path2 = [paths objectAtIndex:j];
+            
+            // Find minimum distance between these two path segments
+            CGFloat distance = [self findMinimumDistanceBetweenPath:path1 andPath:path2];
+            if (distance < closestDistance) {
+                closestDistance = distance;
+            }
+            
+            // If we found a very close distance, consider them intersecting
+            if (closestDistance < 1.0) {
+                return YES;
+            }
+        }
+    }
+    
+    // Consider paths intersecting if they're within a reasonable distance
+    return (closestDistance < 1.0);
+}
+
+// Find minimum distance between two path segments
+- (CGFloat)findMinimumDistanceBetweenPath:(NSBezierPath *)path1 andPath:(NSBezierPath *)path2 {
+    // Quick bounds check first
+    NSRect bounds1 = [path1 bounds];
+    NSRect bounds2 = [path2 bounds];
+    
+    // Add a margin to the bounds
     bounds1 = NSInsetRect(bounds1, -5, -5);
     bounds2 = NSInsetRect(bounds2, -5, -5);
     
-    // Check if the bounds intersect
-    return NSIntersectsRect(bounds1, bounds2);
+    // If bounds don't intersect, calculate approximate distance between bounds
+    if (!NSIntersectsRect(bounds1, bounds2)) {
+        CGFloat dx = 0.0;
+        CGFloat dy = 0.0;
+        
+        // Calculate horizontal distance
+        if (NSMaxX(bounds1) < NSMinX(bounds2)) {
+            dx = NSMinX(bounds2) - NSMaxX(bounds1);
+        } else if (NSMaxX(bounds2) < NSMinX(bounds1)) {
+            dx = NSMinX(bounds1) - NSMaxX(bounds2);
+        }
+        
+        // Calculate vertical distance
+        if (NSMaxY(bounds1) < NSMinY(bounds2)) {
+            dy = NSMinY(bounds2) - NSMaxY(bounds1);
+        } else if (NSMaxY(bounds2) < NSMinY(bounds1)) {
+            dy = NSMinY(bounds1) - NSMaxY(bounds2);
+        }
+        
+        // Return the distance between bounds
+        return sqrt(dx*dx + dy*dy);
+    }
+    
+    // For simple paths, just check a few sample points
+    CGFloat minDistance = CGFLOAT_MAX;
+    
+    // Get a few representative points from first path
+    NSArray *points1 = [self getSamplePointsFromPath:path1];
+    NSArray *points2 = [self getSamplePointsFromPath:path2];
+    
+    // Check all pairs of points
+    for (NSValue *value1 in points1) {
+        NSPoint point1 = [value1 pointValue];
+        
+        for (NSValue *value2 in points2) {
+            NSPoint point2 = [value2 pointValue];
+            
+            // Calculate distance between points
+            CGFloat dx = point2.x - point1.x;
+            CGFloat dy = point2.y - point1.y;
+            CGFloat distance = sqrt(dx*dx + dy*dy);
+            
+            if (distance < minDistance) {
+                minDistance = distance;
+            }
+        }
+    }
+    
+    return minDistance;
+}
+
+// Get sample points from a path for distance calculations
+- (NSArray *)getSamplePointsFromPath:(NSBezierPath *)path {
+    NSMutableArray *points = [NSMutableArray array];
+    NSInteger elementCount = [path elementCount];
+    
+    // Use all points from the path for maximum accuracy
+    NSPoint pointData[3];
+    
+    for (NSInteger i = 0; i < elementCount; i++) {
+        NSBezierPathElement element = [path elementAtIndex:i associatedPoints:pointData];
+        
+        if (element == NSMoveToBezierPathElement || element == NSLineToBezierPathElement) {
+            [points addObject:[NSValue valueWithPoint:pointData[0]]];
+        } else if (element == NSCurveToBezierPathElement) {
+            // For curve elements, include all control points for better accuracy
+            [points addObject:[NSValue valueWithPoint:pointData[0]]];
+            [points addObject:[NSValue valueWithPoint:pointData[1]]];
+            [points addObject:[NSValue valueWithPoint:pointData[2]]];
+            
+            // Add intermediate points along the curve for better detection
+            // Add more sample points along the curve (10 intermediate points)
+            for (CGFloat t = 0.1; t < 1.0; t += 0.1) {
+                NSPoint prevPoint = (i > 0) ? [self pointAtIndex:i-1 forPath:path] : pointData[0];
+                NSPoint p = [self evaluateBezierForT:t 
+                                            startPt:prevPoint 
+                                           controlPt1:pointData[0] 
+                                           controlPt2:pointData[1] 
+                                              endPt:pointData[2]];
+                [points addObject:[NSValue valueWithPoint:p]];
+            }
+        }
+    }
+    
+    return points;
+}
+
+// Helper method to get a point at a specific index in a path
+- (NSPoint)pointAtIndex:(NSInteger)index forPath:(NSBezierPath *)path {
+    NSPoint pointData[3];
+    [path elementAtIndex:index associatedPoints:pointData];
+    return pointData[0];
+}
+
+// Evaluate a cubic Bezier curve at parameter t
+- (NSPoint)evaluateBezierForT:(CGFloat)t startPt:(NSPoint)p0 controlPt1:(NSPoint)p1 controlPt2:(NSPoint)p2 endPt:(NSPoint)p3 {
+    CGFloat u = 1.0 - t;
+    CGFloat tt = t * t;
+    CGFloat uu = u * u;
+    CGFloat uuu = uu * u;
+    CGFloat ttt = tt * t;
+    
+    // Cubic Bezier formula
+    NSPoint result;
+    result.x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x;
+    result.y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+    
+    return result;
 }
 
 #pragma mark - Color Persistence

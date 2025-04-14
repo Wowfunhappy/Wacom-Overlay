@@ -56,6 +56,11 @@
 - (void)moveSelectedStroke:(NSPoint)offset;
 - (BOOL)shouldAllowMouseEvent:(NSEvent *)event atPoint:(NSPoint)point;
 - (void)findRelatedStrokes:(NSInteger)strokeIndex;
+- (void)findConnectedStrokes:(NSInteger)strokeIndex withColor:(NSColor *)selectedColor processedStrokes:(NSMutableArray *)processedStrokes;
 - (BOOL)doStrokesIntersect:(NSInteger)strokeIndex1 strokeIndex2:(NSInteger)strokeIndex2;
+- (CGFloat)findMinimumDistanceBetweenPath:(NSBezierPath *)path1 andPath:(NSBezierPath *)path2;
+- (NSArray *)getSamplePointsFromPath:(NSBezierPath *)path;
+- (NSPoint)pointAtIndex:(NSInteger)index forPath:(NSBezierPath *)path;
+- (NSPoint)evaluateBezierForT:(CGFloat)t startPt:(NSPoint)p0 controlPt1:(NSPoint)p1 controlPt2:(NSPoint)p2 endPt:(NSPoint)p3;
 
 @end
