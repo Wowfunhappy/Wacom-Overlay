@@ -65,19 +65,14 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             BOOL wasSelected = [[drawView valueForKey:@"isStrokeSelected"] boolValue];
             
             if (wasSelected) {
-                // A stroke was selected, change cursor and capture the event
-                [[NSCursor closedHandCursor] set];
+                // A stroke was selected, capture the event
                 return NULL; // Return NULL to stop event propagation
-            } else {
-                // No stroke was found, use default cursor and pass through
-                [[NSCursor arrowCursor] set];
             }
         }
         // For other mouse events, handle dragging if we have a selected stroke
         else if (type == kCGEventLeftMouseDragged) {
             // If we're already dragging a stroke, continue the drag operation
             if ([[drawView valueForKey:@"isDraggingStroke"] boolValue]) {
-                [[NSCursor closedHandCursor] set];
                 [drawView mouseEvent:nsEvent];
                 return NULL; // Capture during drag
             }
@@ -85,22 +80,13 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         // For mouse up, complete any drag operation
         else if (type == kCGEventLeftMouseUp) {
             if ([[drawView valueForKey:@"isDraggingStroke"] boolValue]) {
-                [[NSCursor openHandCursor] set];
                 [drawView mouseEvent:nsEvent];
                 return NULL; // Capture to complete the drag
             }
         }
-        // For mouse move, update cursor for hover feedback
+        // For mouse move events, let them through without any special handling
         else if (type == kCGEventMouseMoved) {
-            // For hover detection, use the stroke finding method
-            // This will use the same sensitivity settings as in DrawView
-            NSInteger strokeIndex = [drawView findStrokeAtPoint:viewPoint];
-            if (strokeIndex >= 0) {
-                [[NSCursor openHandCursor] set];
-            } else {
-                [[NSCursor arrowCursor] set];
-            }
-            // Always let move events through
+            // No cursor changing for hover feedback
         }
     }
     // Check if this is a keyboard event
