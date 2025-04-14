@@ -30,9 +30,15 @@
     return wacomPID;
 }
 
+// Define a global to track which events are handled by event tap
+static BOOL g_handledByEventTap = NO;
+
 // Event tap callback function
 static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *userInfo) {
     AppDelegate *appDelegate = (AppDelegate *)userInfo;
+    
+    // Reset handled flag for each new event
+    g_handledByEventTap = NO;
     
     // Convert to NSEvent to check event type
     NSEvent *nsEvent = [NSEvent eventWithCGEvent:event];
@@ -108,116 +114,84 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     }
     // Check if this is a keyboard event
     else if (type == kCGEventKeyDown) {
-        NSLog(@"Key down event captured: %@", nsEvent);
+        NSLog(@"Key down event captured in event tap: %@", nsEvent);
         
         // Get the source process ID of the event
         pid_t eventSourcePID = CGEventGetIntegerValueField(event, kCGEventSourceUnixProcessID);
-        NSLog(@"Event source PID: %d, Wacom PID: %d", (int)eventSourcePID, (int)appDelegate.wacomDriverPID);
+        NSLog(@"EVENT TAP: Event source PID: %d, Wacom PID: %d", (int)eventSourcePID, (int)appDelegate.wacomDriverPID);
         
         // Only handle keyboard events from the Wacom driver
         if (appDelegate.wacomDriverPID != 0 && eventSourcePID == appDelegate.wacomDriverPID) {
-            NSLog(@"Keyboard event from Wacom tablet detected");
+            NSLog(@"EVENT TAP: Blocking ALL keyboard events from Wacom tablet");
             
-            // First check for our special color toggle shortcut
+            // First process the event by our app
             NSUInteger flags = [nsEvent modifierFlags];
             NSString *characters = [nsEvent charactersIgnoringModifiers];
             
             // In OS X 10.9, use the raw bit values
-            BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
             BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
-            BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
             BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+            BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
+            BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
             BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+            BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
+            BOOL isD = ([characters isEqualToString:@"D"] || [characters isEqualToString:@"d"]);
             
-            if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-                NSLog(@"Special color toggle key combination detected from Wacom");
-                
-                // Make sure the overlay window and drawing view are active,
-                // even if we're on a different desktop/space
-                [appDelegate.overlayWindow orderFront:nil];
-                
-                // Ensure the draw view receives the command
-                DrawView *drawView = appDelegate.drawView;
-                if (!drawView) {
-                    // Try to get the draw view if it's not directly available
-                    TabletApplication *app = (TabletApplication *)NSApp;
-                    OverlayWindow *window = [app overlayWindow];
-                    if (window) {
-                        drawView = (DrawView *)[window contentView];
-                    }
-                }
-                
-                if (drawView && [drawView respondsToSelector:@selector(toggleToNextColor)]) {
-                    NSLog(@"Executing color toggle command across desktops");
-                    [drawView toggleToNextColor];
-                    return NULL; // Consume the event
+            // Make sure the overlay window and drawing view are active
+            [appDelegate.overlayWindow orderFront:nil];
+            
+            // Get the draw view
+            DrawView *drawView = appDelegate.drawView;
+            if (!drawView) {
+                // Try to get the draw view if it's not directly available
+                TabletApplication *app = (TabletApplication *)NSApp;
+                OverlayWindow *window = [app overlayWindow];
+                if (window) {
+                    drawView = (DrawView *)[window contentView];
                 }
             }
             
-            // Check for standard editing shortcuts
-            if (isCommandDown) {
-                // Check for Cmd+Z (undo)
-                if ([characters isEqualToString:@"z"] && !isShiftDown) {
-                    NSLog(@"Cmd+Z detected from Wacom - forwarding to draw view");
-                    
-                    // Make sure the overlay window and drawing view are active,
-                    // even if we're on a different desktop/space
-                    [appDelegate.overlayWindow orderFront:nil];
-                    
-                    // Ensure the draw view receives the command
-                    DrawView *drawView = appDelegate.drawView;
-                    if (!drawView) {
-                        // Try to get the draw view if it's not directly available
-                        TabletApplication *app = (TabletApplication *)NSApp;
-                        OverlayWindow *window = [app overlayWindow];
-                        if (window) {
-                            drawView = (DrawView *)[window contentView];
-                        }
+            if (drawView) {
+                // Handle special toggle with Ctrl+Cmd+Opt+Shift+C
+                if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
+                    NSLog(@"EVENT TAP: Special color toggle detected");
+                    if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
+                        [drawView toggleToNextColor];
                     }
-                    
-                    if (drawView) {
+                } 
+                // Handle undo (Cmd+Z)
+                else if (isCommandDown && !isShiftDown && isZ) {
+                    NSLog(@"EVENT TAP: Cmd+Z - undo detected");
+                    if ([drawView respondsToSelector:@selector(canUndo)] && 
+                        [drawView respondsToSelector:@selector(undo)]) {
                         if ([drawView canUndo]) {
-                            NSLog(@"Executing undo command across desktops");
                             [drawView undo];
-                        } else {
-                            NSLog(@"Nothing to undo - but still intercepting the event");
                         }
-                        return NULL; // Always consume the event
                     }
                 }
-                
-                // Check for Cmd+Shift+Z (redo)
-                if (isShiftDown && ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"])) {
-                    NSLog(@"Cmd+Shift+Z detected from Wacom - forwarding to draw view");
-                    
-                    // Make sure the overlay window and drawing view are active,
-                    // even if we're on a different desktop/space
-                    [appDelegate.overlayWindow orderFront:nil];
-                    
-                    // Ensure the draw view receives the command
-                    DrawView *drawView = appDelegate.drawView;
-                    if (!drawView) {
-                        // Try to get the draw view if it's not directly available
-                        TabletApplication *app = (TabletApplication *)NSApp;
-                        OverlayWindow *window = [app overlayWindow];
-                        if (window) {
-                            drawView = (DrawView *)[window contentView];
+                // Handle redo (Cmd+Shift+Z)
+                else if (isCommandDown && isShiftDown && isZ) {
+                    NSLog(@"EVENT TAP: Cmd+Shift+Z - redo detected");
+                    if ([drawView respondsToSelector:@selector(canRedo)] && 
+                        [drawView respondsToSelector:@selector(redo)]) {
+                        if ([drawView canRedo]) {
+                            [drawView redo];
                         }
                     }
-                    
-                    if (drawView) {
-                        if ([drawView canRedo]) {
-                            NSLog(@"Executing redo command across desktops");
-                            [drawView redo];
-                        } else {
-                            NSLog(@"Nothing to redo - but still intercepting the event");
-                        }
-                        return NULL; // Always consume the event
+                }
+                // Handle color toggle (Cmd+D)
+                else if (isCommandDown && isD && !isShiftDown) {
+                    NSLog(@"EVENT TAP: Cmd+D - color toggle detected");
+                    if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
+                        [drawView toggleToNextColor];
                     }
                 }
             }
+            
+            // CRITICAL: Return NULL to block the event COMPLETELY - no further processing by system
+            return NULL;
         } else {
-            NSLog(@"Keyboard event not from Wacom tablet - passing through");
+            NSLog(@"EVENT TAP: Keyboard event not from Wacom tablet - passing through");
         }
     }
     
@@ -461,13 +435,15 @@ NSMenu *colorMenu = nil;
                             CGEventMaskBit(kCGEventKeyDown) |
                             CGEventMaskBit(kCGEventKeyUp);
     
-    // Create the event tap at the highest level possible to capture everything
-    eventTap = CGEventTapCreate(kCGHIDEventTap,      // HID level tap to get events from all processes
+    // Create the event tap at the session level
+    // Previously: kCGHIDEventTap, but this might not block events properly
+    // Switch to kCGSessionEventTap to ensure events are fully intercepted 
+    eventTap = CGEventTapCreate(kCGSessionEventTap,   // Session level tap to intercept before dispatch to apps
                                 kCGHeadInsertEventTap, // Insert at beginning of list
-                                kCGEventTapOptionDefault, // Default options
-                                eventMask,    // Events to capture
-                                eventTapCallback, // Callback function
-                                self);  // User data passed to callback
+                                0,                     // Default options, NOT kCGEventTapOptionDefault
+                                eventMask,             // Events to capture
+                                eventTapCallback,      // Callback function
+                                self);                 // User data passed to callback
     
     if (!eventTap) {
         NSLog(@"ERROR: Failed to create event tap! Make sure the app has accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility");
