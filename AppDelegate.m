@@ -39,6 +39,69 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             return NULL; // Return NULL to stop event propagation
         }
     }
+    // Handle mouse events (for selecting and dragging strokes)
+    else if (type == kCGEventLeftMouseDown || 
+             type == kCGEventLeftMouseDragged || 
+             type == kCGEventLeftMouseUp ||
+             type == kCGEventMouseMoved) {
+        
+        // Get the location of the event
+        CGPoint cgLocation = CGEventGetLocation(event);
+        NSPoint screenPoint = NSMakePoint(cgLocation.x, cgLocation.y);
+        
+        // Get our draw view
+        DrawView *drawView = appDelegate.drawView;
+        
+        // Convert to view coordinates
+        NSPoint viewPoint = [drawView convertScreenPointToView:screenPoint];
+        
+        // Handle mouse events appropriately
+        if (type == kCGEventLeftMouseDown) {
+            // Forward the click to DrawView to check for strokes and handle selection
+            [drawView setValue:[NSNumber numberWithInteger:-1] forKey:@"selectedStrokeIndex"];
+            [drawView mouseEvent:nsEvent];
+            
+            // Check if a stroke was actually selected
+            BOOL wasSelected = [[drawView valueForKey:@"isStrokeSelected"] boolValue];
+            
+            if (wasSelected) {
+                // A stroke was selected, change cursor and capture the event
+                [[NSCursor closedHandCursor] set];
+                return NULL; // Return NULL to stop event propagation
+            } else {
+                // No stroke was found, use default cursor and pass through
+                [[NSCursor arrowCursor] set];
+            }
+        }
+        // For other mouse events, handle dragging if we have a selected stroke
+        else if (type == kCGEventLeftMouseDragged) {
+            // If we're already dragging a stroke, continue the drag operation
+            if ([[drawView valueForKey:@"isDraggingStroke"] boolValue]) {
+                [[NSCursor closedHandCursor] set];
+                [drawView mouseEvent:nsEvent];
+                return NULL; // Capture during drag
+            }
+        }
+        // For mouse up, complete any drag operation
+        else if (type == kCGEventLeftMouseUp) {
+            if ([[drawView valueForKey:@"isDraggingStroke"] boolValue]) {
+                [[NSCursor openHandCursor] set];
+                [drawView mouseEvent:nsEvent];
+                return NULL; // Capture to complete the drag
+            }
+        }
+        // For mouse move, update cursor for hover feedback
+        else if (type == kCGEventMouseMoved) {
+            // Check if mouse is over a stroke
+            NSInteger strokeIndex = [drawView findStrokeAtPoint:viewPoint];
+            if (strokeIndex >= 0) {
+                [[NSCursor openHandCursor] set];
+            } else {
+                [[NSCursor arrowCursor] set];
+            }
+            // Always let move events through
+        }
+    }
     // Check if this is a keyboard event
     else if (type == kCGEventKeyDown) {
         NSLog(@"Key down event captured: %@", nsEvent);

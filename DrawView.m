@@ -36,6 +36,13 @@
         self.smoothingLevel = 20;  // Maximum smoothing level for neatest handwriting
         self.enableSmoothing = YES;  // Always enabled
         
+        // Initialize stroke selection and dragging variables
+        selectedStrokeIndex = -1;
+        isStrokeSelected = NO;
+        isDraggingStroke = NO;
+        dragStartPoint = NSZeroPoint;
+        // Removed debug visualization initialization
+        
         // Make the view transparent to allow click-through
         [self setWantsLayer:YES];
         
@@ -63,6 +70,38 @@
         NSBezierPath *path = [paths objectAtIndex:i];
         NSColor *color = (i < [pathColors count]) ? [pathColors objectAtIndex:i] : strokeColor;
         
+        // Check if this path belongs to the selected stroke
+        if (isStrokeSelected && selectedStrokeIndex >= 0 && selectedStrokeIndex < [strokeMarkers count]) {
+            NSInteger startIndex = [[strokeMarkers objectAtIndex:selectedStrokeIndex] integerValue];
+            NSInteger endIndex;
+            
+            // Determine the end index of the selected stroke
+            if (selectedStrokeIndex < [strokeMarkers count] - 1) {
+                endIndex = [[strokeMarkers objectAtIndex:selectedStrokeIndex + 1] integerValue] - 1;
+            } else {
+                endIndex = [paths count] - 1;
+            }
+            
+            // If this path is part of the selected stroke, draw it slightly highlighted
+            if (i >= startIndex && i <= endIndex) {
+                // Store the original line width
+                CGFloat originalWidth = [path lineWidth];
+                
+                // Draw the selected path with a slightly wider stroke and lighter color
+                NSBezierPath *highlightPath = [path copy];
+                [highlightPath setLineWidth:originalWidth + 2.0];
+                
+                // Create a lighter version of the color
+                NSColor *highlightColor = [color colorWithAlphaComponent:0.3];
+                [highlightColor set];
+                [highlightPath stroke];
+                [highlightPath release];
+                
+                // Ensure we're using the original width for the actual stroke
+                [path setLineWidth:originalWidth];
+            }
+        }
+        
         [color set];
         [path stroke];
     }
@@ -72,6 +111,8 @@
         [strokeColor set];
         [currentPath stroke];
     }
+    
+    // Removed debug visualization code
 }
 
 // This special method handles events forwarded from the global event monitor
@@ -79,7 +120,8 @@
     // Handle event based on its type
     NSInteger type = [event type];
     
-    NSLog(@"DrawView received forwarded event from monitor, type: %ld", (long)type);
+    NSLog(@"DrawView received forwarded event from monitor, type: %ld, isTablet: %d", 
+          (long)type, [event isTabletPointerEvent] ? 1 : 0);
     
     switch (type) {
         case 1: // NSLeftMouseDown
@@ -114,222 +156,258 @@
 }
 
 - (NSPoint)convertScreenPointToView:(NSPoint)screenPoint {
-    // If the window is nil (which happens for global event monitoring when the app isn't active),
-    // we need to account for that
+    // Get our window
     NSWindow *window = [self window];
     if (!window) {
-        NSLog(@"DrawView: Warning - window is nil in convertScreenPointToView. Using overlay window.");
-        
         // Try to get the overlay window from the application
         TabletApplication *app = (TabletApplication *)[NSApplication sharedApplication];
         if ([app respondsToSelector:@selector(overlayWindow)]) {
             window = (NSWindow *)[app performSelector:@selector(overlayWindow)];
         }
         
-        // If we still don't have a window, just return the screen point
         if (!window) {
-            NSLog(@"DrawView: Error - cannot find window for coordinate conversion");
             return screenPoint;
         }
     }
     
-    // For multi-screen setups or spaces, ensure the window is frontmost and properly positioned
+    // For multi-screen setups, make sure the window is visible
     if (![window isVisible]) {
         [window orderFront:nil];
     }
-
-    // First determine which screen the point is on
-    NSScreen *pointScreen = nil;
-    for (NSScreen *screen in [NSScreen screens]) {
-        if (NSPointInRect(screenPoint, [screen frame])) {
-            pointScreen = screen;
-            break;
-        }
-    }
     
-    // If we can't determine which screen contains the point, use main screen
-    if (!pointScreen) {
-        pointScreen = [NSScreen mainScreen];
-    }
-    
-    // Convert screen coordinates to window coordinates
+    // Simple direct conversion method
+    // 1. Convert screen point to window base coordinates
     NSPoint windowPoint = [window convertScreenToBase:screenPoint];
     
-    // Convert window coordinates to view coordinates
+    // 2. Convert window coordinates to view coordinates
     NSPoint viewPoint = [self convertPoint:windowPoint fromView:nil];
-    
-    // Log for debugging
-    NSLog(@"Converting coordinates - Screen: %@ -> Window: %@ -> View: %@", 
-          NSStringFromPoint(screenPoint), 
-          NSStringFromPoint(windowPoint),
-          NSStringFromPoint(viewPoint));
     
     return viewPoint;
 }
 
 - (void)mouseDown:(NSEvent *)event {
-    // Check if this is a tablet event
+    // Get the point from the event
+    NSPoint viewPoint;
+    
     if ([event isTabletPointerEvent]) {
-        NSLog(@"DrawView: mouseDown detected tablet event");
+        // For tablet events, use the screen location approach
+        NSPoint screenPoint = [NSEvent mouseLocation];
+        viewPoint = [self convertScreenPointToView:screenPoint];
+        
+        // If we're in eraser mode, erase stroke at this point instead of drawing
+        if (mErasing) {
+            [self eraseStrokeAtPoint:viewPoint];
+            return;
+        }
+        
+        // Clear the smoothing buffer at the start of a new stroke
+        [self clearSmoothingBuffer];
+        
+        // Apply smoothing to the starting point (adds it to buffer)
+        NSPoint smoothedPoint = [self smoothPoint:viewPoint];
+        
+        // Start a new path
+        currentPath = [[NSBezierPath bezierPath] retain];
+        [currentPath setLineWidth:lineWidth];
+        [currentPath setLineCapStyle:NSRoundLineCapStyle];
+        [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
+        
+        // Start the path
+        [currentPath moveToPoint:smoothedPoint];
+        lastPoint = smoothedPoint;
+        
+        // Add a marker for the start of a new stroke
+        // We'll record the current path count at the beginning of a stroke
+        [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
     } else {
-        NSLog(@"DrawView: mouseDown detected regular mouse event, ignoring");
-        return;
+        // For regular mouse events, use the event's locationInWindow coordinates
+        viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
+        
+        // Attempt to find a stroke at this point
+        BOOL foundStroke = NO;
+        
+        // Only attempt to find a stroke if we have strokes to check
+        if ([paths count] > 0 && [strokeMarkers count] > 0) {
+            for (NSInteger markerIndex = [strokeMarkers count] - 1; markerIndex >= 0; markerIndex--) {
+                // Get the range of paths for this stroke
+                NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
+                NSInteger endIndex;
+                
+                if (markerIndex < [strokeMarkers count] - 1) {
+                    endIndex = [[strokeMarkers objectAtIndex:markerIndex + 1] integerValue] - 1;
+                } else {
+                    endIndex = [paths count] - 1;
+                }
+                
+                // Check each path segment in the stroke
+                for (NSInteger i = startIndex; i <= endIndex; i++) {
+                    NSBezierPath *path = [paths objectAtIndex:i];
+                    NSRect bounds = [path bounds];
+                    
+                    // Extend the bounds to make selection easier
+                    NSRect extendedBounds = NSInsetRect(bounds, -30, -30);
+                    
+                    if (NSPointInRect(viewPoint, extendedBounds)) {
+                        // Set this as the selected stroke
+                        selectedStrokeIndex = markerIndex;
+                        isStrokeSelected = YES;
+                        isDraggingStroke = YES;
+                        dragStartPoint = viewPoint;
+                        foundStroke = YES;
+                        break;
+                    }
+                }
+                
+                if (foundStroke) {
+                    break;
+                }
+            }
+        }
+        
+        // If no stroke was found at this point, clear any existing selection
+        if (!foundStroke) {
+            if (isStrokeSelected) {
+                isStrokeSelected = NO;
+                selectedStrokeIndex = -1;
+                isDraggingStroke = NO;
+            }
+        }
     }
-    
-    // Get the screen location
-    NSPoint screenPoint = [NSEvent mouseLocation];
-    
-    // Convert to view coordinates
-    NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
-    
-    // If we're in eraser mode, erase stroke at this point instead of drawing
-    if (mErasing) {
-        NSLog(@"DrawView: Processing eraser action at point: %@", NSStringFromPoint(viewPoint));
-        [self eraseStrokeAtPoint:viewPoint];
-        return;
-    }
-    
-    // Clear the smoothing buffer at the start of a new stroke
-    [self clearSmoothingBuffer];
-    
-    // Apply smoothing to the starting point (adds it to buffer)
-    NSPoint smoothedPoint = [self smoothPoint:viewPoint];
-    
-    // Start a new path
-    currentPath = [[NSBezierPath bezierPath] retain];
-    [currentPath setLineWidth:lineWidth];
-    [currentPath setLineCapStyle:NSRoundLineCapStyle];
-    [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
-    
-    // Start the path
-    [currentPath moveToPoint:smoothedPoint];
-    lastPoint = smoothedPoint;
-    
-    // Add a marker for the start of a new stroke
-    // We'll record the current path count at the beginning of a stroke
-    [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
-    
-    NSLog(@"DrawView: Starting new path at point: %@", NSStringFromPoint(viewPoint));
     
     [self setNeedsDisplay:YES];
 }
 
 - (void)mouseDragged:(NSEvent *)event {
-    // Check if this is a tablet event
+    // Get the point from the event
+    NSPoint viewPoint;
+    
     if ([event isTabletPointerEvent]) {
-        NSLog(@"DrawView: mouseDragged detected tablet event");
-    } else {
-        NSLog(@"DrawView: mouseDragged detected regular mouse event, ignoring");
-        return;
-    }
-    
-    // If we're in eraser mode, handle eraser dragging
-    if (mErasing) {
-        // Get the screen location
+        // For tablet events, use the screen location approach
         NSPoint screenPoint = [NSEvent mouseLocation];
+        viewPoint = [self convertScreenPointToView:screenPoint];
+        NSLog(@"DrawView: mouseDragged detected tablet event at point: %@", NSStringFromPoint(viewPoint));
         
-        // Convert to view coordinates
-        NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
-        
-        if (!hasLastErasePoint) {
-            lastErasePoint = viewPoint;
-            hasLastErasePoint = YES;
-        } else {
-            // Calculate distance from last erase point
-            CGFloat dx = viewPoint.x - lastErasePoint.x;
-            CGFloat dy = viewPoint.y - lastErasePoint.y;
-            CGFloat distance = sqrt(dx*dx + dy*dy);
-            
-            // Only process erase if we've moved enough distance (to avoid rapid erasures)
-            if (distance > 10.0) {
-                [self eraseStrokeAtPoint:viewPoint];
+        // If we're in eraser mode, handle eraser dragging
+        if (mErasing) {
+            if (!hasLastErasePoint) {
                 lastErasePoint = viewPoint;
+                hasLastErasePoint = YES;
+            } else {
+                // Calculate distance from last erase point
+                CGFloat dx = viewPoint.x - lastErasePoint.x;
+                CGFloat dy = viewPoint.y - lastErasePoint.y;
+                CGFloat distance = sqrt(dx*dx + dy*dy);
+                
+                // Only process erase if we've moved enough distance (to avoid rapid erasures)
+                if (distance > 10.0) {
+                    [self eraseStrokeAtPoint:viewPoint];
+                    lastErasePoint = viewPoint;
+                }
             }
+            return;
         }
-        return;
+        
+        // If we have a current path, add a line to it
+        if (currentPath) {
+            // Apply smoothing to the point
+            NSPoint smoothedPoint = [self smoothPoint:viewPoint];
+            
+            // Create a segment path for this movement with pressure-sensitive width
+            NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
+            [segmentPath setLineCapStyle:NSRoundLineCapStyle];
+            [segmentPath setLineJoinStyle:NSRoundLineJoinStyle];
+            
+            // Use pressure if available to adjust line width for this segment
+            float segmentWidth = lineWidth;
+            if ([event pressure] > 0.0) {
+                segmentWidth = lineWidth * ([event pressure] * 2.0);
+                segmentWidth = MAX(0.5, segmentWidth);
+                
+                NSLog(@"DrawView: Using pressure: %f, width: %f", [event pressure], segmentWidth);
+            }
+            [segmentPath setLineWidth:segmentWidth];
+            
+            // Create segment from last point to current point
+            [segmentPath moveToPoint:lastPoint];
+            [segmentPath lineToPoint:smoothedPoint];
+            
+            // Add this segment to our collection
+            [paths addObject:segmentPath];
+            [pathColors addObject:[strokeColor copy]]; // Store current color with path
+            [segmentPath release];
+            
+            // Update last point for next segment
+            lastPoint = smoothedPoint;
+            
+            NSLog(@"DrawView: Adding point to path: %@", NSStringFromPoint(viewPoint));
+        }
+    } else {
+        // For regular mouse events, use the event's locationInWindow converted to view coordinates
+        viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
+        NSLog(@"DrawView: mouseDragged detected regular mouse event at point: %@", NSStringFromPoint(viewPoint));
+        
+        // Handle dragging a selected stroke
+        if (isDraggingStroke && isStrokeSelected && selectedStrokeIndex >= 0) {
+            // Calculate the movement offset
+            CGFloat dx = viewPoint.x - dragStartPoint.x;
+            CGFloat dy = viewPoint.y - dragStartPoint.y;
+            
+            // Apply the offset to the stroke
+            [self moveSelectedStroke:NSMakePoint(dx, dy)];
+            
+            // Update the drag start point for the next mouse dragged event
+            dragStartPoint = viewPoint;
+            
+            NSLog(@"DrawView: Dragged stroke by offset (%f, %f)", dx, dy);
+        }
     }
     
-    // If we have a current path, add a line to it
-    if (currentPath) {
-        // Get the screen location
-        NSPoint screenPoint = [NSEvent mouseLocation];
-        
-        // Convert to view coordinates
-        NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
-        
-        // Apply smoothing to the point
-        NSPoint smoothedPoint = [self smoothPoint:viewPoint];
-        
-        // Create a segment path for this movement with pressure-sensitive width
-        NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
-        [segmentPath setLineCapStyle:NSRoundLineCapStyle];
-        [segmentPath setLineJoinStyle:NSRoundLineJoinStyle];
-        
-        // Use pressure if available to adjust line width for this segment
-        float segmentWidth = lineWidth;
-        if ([event pressure] > 0.0) {
-            segmentWidth = lineWidth * ([event pressure] * 2.0);
-            segmentWidth = MAX(0.5, segmentWidth);
-            
-            NSLog(@"DrawView: Using pressure: %f, width: %f", [event pressure], segmentWidth);
-        }
-        [segmentPath setLineWidth:segmentWidth];
-        
-        // Create segment from last point to current point
-        [segmentPath moveToPoint:lastPoint];
-        [segmentPath lineToPoint:smoothedPoint];
-        
-        // Add this segment to our collection
-        [paths addObject:segmentPath];
-        [pathColors addObject:[strokeColor copy]]; // Store current color with path
-        [segmentPath release];
-        
-        // Update last point for next segment
-        lastPoint = smoothedPoint;
-        
-        NSLog(@"DrawView: Adding point to path: %@", NSStringFromPoint(viewPoint));
-        
-        // Redraw
-        [self setNeedsDisplay:YES];
-    }
+    // Redraw
+    [self setNeedsDisplay:YES];
 }
 
 - (void)mouseUp:(NSEvent *)event {
-    // Check if this is a tablet event
     if ([event isTabletPointerEvent]) {
         NSLog(@"DrawView: mouseUp detected tablet event");
-    } else {
-        NSLog(@"DrawView: mouseUp detected regular mouse event, ignoring");
-        return;
-    }
-    
-    // If we're in eraser mode, reset tracking variables
-    if (mErasing) {
-        [self resetEraseTracking];
-        return;
-    }
-    
-    // Clear the smoothing buffer at the end of a stroke
-    [self clearSmoothingBuffer];
-    
-    // Release the current path as we now use individual segments
-    if (currentPath) {
-        [currentPath release];
-        currentPath = nil;
-        [self setNeedsDisplay:YES];
         
-        // Only clear the redo stack if we've actually drawn something new
-        if ([paths count] > 0) {
-            // Clear the redo stack since we've added new paths
-            [undoPaths removeAllObjects];
-            [undoPathColors removeAllObjects];
-            [undoStrokeMarkers removeAllObjects];
-            
-            NSLog(@"DrawView: Cleared redo stack due to new stroke");
+        // If we're in eraser mode, reset tracking variables
+        if (mErasing) {
+            [self resetEraseTracking];
+            return;
         }
         
-        NSLog(@"DrawView: Finished stroke, total segments: %lu", (unsigned long)[paths count]);
+        // Clear the smoothing buffer at the end of a stroke
+        [self clearSmoothingBuffer];
+        
+        // Release the current path as we now use individual segments
+        if (currentPath) {
+            [currentPath release];
+            currentPath = nil;
+            
+            // Only clear the redo stack if we've actually drawn something new
+            if ([paths count] > 0) {
+                // Clear the redo stack since we've added new paths
+                [undoPaths removeAllObjects];
+                [undoPathColors removeAllObjects];
+                [undoStrokeMarkers removeAllObjects];
+                
+                NSLog(@"DrawView: Cleared redo stack due to new stroke");
+            }
+            
+            NSLog(@"DrawView: Finished stroke, total segments: %lu", (unsigned long)[paths count]);
+        }
+    } else {
+        NSPoint viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
+        NSLog(@"DrawView: mouseUp detected regular mouse event at point: %@", NSStringFromPoint(viewPoint));
+        
+        // End any stroke dragging
+        if (isDraggingStroke) {
+            isDraggingStroke = NO;
+            NSLog(@"DrawView: Finished dragging stroke");
+        }
     }
+    
+    [self setNeedsDisplay:YES];
 }
 
 - (void)clear {
@@ -421,9 +499,19 @@
     }
 }
 
-// Erase the entire stroke that contains the given point
-- (void)eraseStrokeAtPoint:(NSPoint)point {
-    NSLog(@"DrawView: Attempting to erase stroke at point: %@", NSStringFromPoint(point));
+// Find the marker index of the stroke that contains the given point
+- (NSInteger)findStrokeAtPoint:(NSPoint)point {
+    NSLog(@"DrawView: Attempting to find stroke at point: %@", NSStringFromPoint(point));
+    
+    // Log information about the current state
+    NSLog(@"DrawView: Current state - paths: %lu, strokeMarkers: %lu",
+          (unsigned long)[paths count], (unsigned long)[strokeMarkers count]);
+    
+    // Safety check
+    if ([paths count] == 0 || [strokeMarkers count] == 0) {
+        NSLog(@"DrawView: No strokes to check");
+        return -1;
+    }
     
     // Find which stroke the point is in
     for (NSInteger markerIndex = [strokeMarkers count] - 1; markerIndex >= 0; markerIndex--) {
@@ -437,65 +525,138 @@
             endIndex = [paths count] - 1;
         }
         
+        NSLog(@"DrawView: Checking stroke at marker index: %ld (segments %ld to %ld)",
+              (long)markerIndex, (long)startIndex, (long)endIndex);
+        
         // Check if the point is within any path in this stroke
         for (NSInteger i = startIndex; i <= endIndex; i++) {
             NSBezierPath *path = [paths objectAtIndex:i];
             CGFloat pathWidth = [path lineWidth];
             
+            // Use a much larger detection threshold for now (debugging)
+            CGFloat detectionThreshold = pathWidth * 10.0;
+            
             // Check if point is near this path segment
-            // We'll use a simple distance check for each path segment
-            if ([self point:point isNearPath:path withinDistance:pathWidth * 2.0]) {
-                NSLog(@"DrawView: Found stroke to erase at marker index: %ld", (long)markerIndex);
-                
-                // Store the stroke info for undo
-                NSInteger segmentCount = endIndex - startIndex + 1;
-                [undoStrokeMarkers addObject:[NSNumber numberWithInteger:segmentCount]];
-                
-                // Move each path segment in the stroke to the undo stack (in reverse to maintain order)
-                for (NSInteger j = endIndex; j >= startIndex; j--) {
-                    // Get the path and color at this index
-                    NSBezierPath *pathToUndo = [[paths objectAtIndex:j] retain];
-                    NSColor *colorToUndo = [[pathColors objectAtIndex:j] retain];
-                    
-                    // Add to undo stacks
-                    [undoPaths addObject:pathToUndo];
-                    [undoPathColors addObject:colorToUndo];
-                    
-                    // Release our retained copies
-                    [pathToUndo release];
-                    [colorToUndo release];
-                }
-                
-                // Remove the segments from the current paths
-                NSRange removeRange = NSMakeRange(startIndex, segmentCount);
-                [paths removeObjectsInRange:removeRange];
-                [pathColors removeObjectsInRange:removeRange];
-                
-                // Update markers after this one (they all need to be shifted)
-                for (NSInteger j = markerIndex + 1; j < [strokeMarkers count]; j++) {
-                    NSInteger oldIndex = [[strokeMarkers objectAtIndex:j] integerValue];
-                    [strokeMarkers replaceObjectAtIndex:j 
-                                            withObject:[NSNumber numberWithInteger:oldIndex - segmentCount]];
-                }
-                
-                // Remove the marker for this stroke
-                [strokeMarkers removeObjectAtIndex:markerIndex];
-                
-                // Redraw
-                [self setNeedsDisplay:YES];
-                
-                NSLog(@"DrawView: Erased stroke with %ld segments", (long)segmentCount);
-                return;
+            if ([self point:point isNearPath:path withinDistance:detectionThreshold]) {
+                NSLog(@"DrawView: Found stroke at marker index: %ld, path %ld, width %.2f, threshold %.2f",
+                      (long)markerIndex, (long)i, pathWidth, detectionThreshold);
+                return markerIndex;
             }
         }
     }
     
-    NSLog(@"DrawView: No stroke found at point to erase");
+    NSLog(@"DrawView: No stroke found at point after checking all paths");
+    return -1;
+}
+
+// Move the selected stroke by the given offset
+- (void)moveSelectedStroke:(NSPoint)offset {
+    if (!isStrokeSelected || selectedStrokeIndex < 0 || selectedStrokeIndex >= [strokeMarkers count]) {
+        NSLog(@"DrawView: Cannot move stroke - no valid selection");
+        return;
+    }
+    
+    NSInteger startIndex = [[strokeMarkers objectAtIndex:selectedStrokeIndex] integerValue];
+    NSInteger endIndex;
+    
+    // Determine the end index of this stroke
+    if (selectedStrokeIndex < [strokeMarkers count] - 1) {
+        endIndex = [[strokeMarkers objectAtIndex:selectedStrokeIndex + 1] integerValue] - 1;
+    } else {
+        endIndex = [paths count] - 1;
+    }
+    
+    // Move each path segment in the stroke
+    for (NSInteger i = startIndex; i <= endIndex; i++) {
+        NSBezierPath *path = [paths objectAtIndex:i];
+        
+        // Create a transform to move the path
+        NSAffineTransform *transform = [NSAffineTransform transform];
+        [transform translateXBy:offset.x yBy:offset.y];
+        
+        // Apply the transform to the path
+        [path transformUsingAffineTransform:transform];
+    }
+    
+    NSLog(@"DrawView: Moved stroke from index %ld to %ld by offset (%f, %f)", 
+          (long)startIndex, (long)endIndex, offset.x, offset.y);
+}
+
+// Erase the entire stroke that contains the given point
+- (void)eraseStrokeAtPoint:(NSPoint)point {
+    NSLog(@"DrawView: Attempting to erase stroke at point: %@", NSStringFromPoint(point));
+    
+    // Find which stroke the point is in
+    NSInteger markerIndex = [self findStrokeAtPoint:point];
+    
+    if (markerIndex >= 0) {
+        NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
+        NSInteger endIndex;
+        
+        // Determine the end index of this stroke
+        if (markerIndex < [strokeMarkers count] - 1) {
+            endIndex = [[strokeMarkers objectAtIndex:markerIndex + 1] integerValue] - 1;
+        } else {
+            endIndex = [paths count] - 1;
+        }
+        
+        NSLog(@"DrawView: Found stroke to erase at marker index: %ld", (long)markerIndex);
+        
+        // Store the stroke info for undo
+        NSInteger segmentCount = endIndex - startIndex + 1;
+        [undoStrokeMarkers addObject:[NSNumber numberWithInteger:segmentCount]];
+        
+        // Move each path segment in the stroke to the undo stack (in reverse to maintain order)
+        for (NSInteger j = endIndex; j >= startIndex; j--) {
+            // Get the path and color at this index
+            NSBezierPath *pathToUndo = [[paths objectAtIndex:j] retain];
+            NSColor *colorToUndo = [[pathColors objectAtIndex:j] retain];
+            
+            // Add to undo stacks
+            [undoPaths addObject:pathToUndo];
+            [undoPathColors addObject:colorToUndo];
+            
+            // Release our retained copies
+            [pathToUndo release];
+            [colorToUndo release];
+        }
+        
+        // Remove the segments from the current paths
+        NSRange removeRange = NSMakeRange(startIndex, segmentCount);
+        [paths removeObjectsInRange:removeRange];
+        [pathColors removeObjectsInRange:removeRange];
+        
+        // Update markers after this one (they all need to be shifted)
+        for (NSInteger j = markerIndex + 1; j < [strokeMarkers count]; j++) {
+            NSInteger oldIndex = [[strokeMarkers objectAtIndex:j] integerValue];
+            [strokeMarkers replaceObjectAtIndex:j 
+                                    withObject:[NSNumber numberWithInteger:oldIndex - segmentCount]];
+        }
+        
+        // Remove the marker for this stroke
+        [strokeMarkers removeObjectAtIndex:markerIndex];
+        
+        // Redraw
+        [self setNeedsDisplay:YES];
+        
+        NSLog(@"DrawView: Erased stroke with %ld segments", (long)segmentCount);
+    } else {
+        NSLog(@"DrawView: No stroke found at point to erase");
+    }
 }
 
 // Helper method to check if a point is near a path
 - (BOOL)point:(NSPoint)point isNearPath:(NSBezierPath *)path withinDistance:(CGFloat)distance {
-    // For a simple line segment, we can check distance from the line
+    // Get the bounding box of the path first for a quick initial check
+    NSRect bounds = [path bounds];
+    NSRect extendedBounds = NSInsetRect(bounds, -distance, -distance);
+    
+    // Quick rejection based on extended bounding box 
+    if (!NSPointInRect(point, extendedBounds)) {
+        return NO;
+    }
+    
+    // For a simple line segment, can check distance from the line
     if ([path elementCount] == 2) { // Simple line with moveToPoint and lineToPoint
         NSPoint points[2];
         [path elementAtIndex:0 associatedPoints:&points[0]]; // moveToPoint
@@ -504,10 +665,41 @@
         return [self distanceFromPoint:point toLineWithPoints:points] <= distance;
     }
     
-    // For more complex paths, we'll use a simpler check
-    NSRect bounds = [path bounds];
-    NSRect extendedBounds = NSInsetRect(bounds, -distance, -distance);
-    return NSPointInRect(point, extendedBounds);
+    // For more complex paths with multiple elements, check each segment
+    if ([path elementCount] > 2) {
+        NSPoint points[3]; // For storing points of the current segment
+        NSBezierPathElement type;
+        NSPoint movePoint = NSZeroPoint;
+        BOOL haveMovePoint = NO;
+        
+        for (NSInteger i = 0; i < [path elementCount]; i++) {
+            type = [path elementAtIndex:i associatedPoints:points];
+            
+            switch (type) {
+                case NSMoveToBezierPathElement:
+                    movePoint = points[0];
+                    haveMovePoint = YES;
+                    break;
+                    
+                case NSLineToBezierPathElement:
+                    if (haveMovePoint) {
+                        NSPoint linePoints[2] = {movePoint, points[0]};
+                        if ([self distanceFromPoint:point toLineWithPoints:linePoints] <= distance) {
+                            return YES;
+                        }
+                    }
+                    movePoint = points[0];
+                    break;
+                    
+                default:
+                    // For curve elements, just use the bounding box check we did earlier
+                    break;
+            }
+        }
+    }
+    
+    // Fallback to the extended bounds check which we already passed
+    return YES;
 }
 
 // Calculate distance from point to line segment
@@ -548,6 +740,17 @@
     CGFloat dy = point.y - py;
     
     return sqrt(dx * dx + dy * dy);
+}
+
+// Determine if a mouse event should be handled by us or passed through
+- (BOOL)shouldAllowMouseEvent:(NSEvent *)event atPoint:(NSPoint)point {
+    // Always handle tablet events
+    if ([event isTabletPointerEvent]) {
+        return YES;
+    }
+    
+    // For mouse events, check if they're over a stroke
+    return [self findStrokeAtPoint:point] >= 0;
 }
 
 // Undo the last complete stroke
@@ -658,6 +861,23 @@
     return NO;
 }
 
+// Override hit testing to allow click-through when not over a stroke
+- (NSView *)hitTest:(NSPoint)point {
+    // Convert incoming point from window coordinates to view coordinates
+    NSPoint viewPoint = [self convertPoint:point fromView:nil];
+    
+    // Check if the point is over a stroke
+    if ([self findStrokeAtPoint:viewPoint] >= 0) {
+        // If we're over a stroke, return self to handle the event
+        NSLog(@"DrawView: Hit test found stroke at point %@", NSStringFromPoint(viewPoint));
+        return self;
+    } else {
+        // Otherwise, return nil to ignore the event (pass through)
+        NSLog(@"DrawView: Hit test - no stroke at point %@, passing through", NSStringFromPoint(viewPoint));
+        return nil;
+    }
+}
+
 // Reset the eraser tracking variables
 - (void)resetEraseTracking {
     hasLastErasePoint = NO;
@@ -754,6 +974,7 @@
     [strokeColor release];
     [presetColors release];
     [pointBuffer release];
+    // Removed debug visualization releases
     [super dealloc];
 }
 
@@ -805,6 +1026,8 @@
 - (void)clearSmoothingBuffer {
     [pointBuffer removeAllObjects];
 }
+
+// Removed debug visualization method
 
 #pragma mark - Color Persistence
 

@@ -21,6 +21,13 @@
     NSMutableArray *pointBuffer;
     NSInteger smoothingLevel;
     BOOL enableSmoothing;
+    
+    // Stroke selection and dragging variables
+    NSInteger selectedStrokeIndex;
+    BOOL isStrokeSelected;
+    BOOL isDraggingStroke;
+    NSPoint dragStartPoint;
+    // Removing debug visualization arrays
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
@@ -45,5 +52,9 @@
 - (void)setPresetColorAtIndex:(NSInteger)index toColor:(NSColor *)color;
 - (NSPoint)smoothPoint:(NSPoint)point;
 - (void)clearSmoothingBuffer;
+- (NSInteger)findStrokeAtPoint:(NSPoint)point;
+- (void)moveSelectedStroke:(NSPoint)offset;
+- (BOOL)shouldAllowMouseEvent:(NSEvent *)event atPoint:(NSPoint)point;
+// Removed debug visualization methods
 
 @end
