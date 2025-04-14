@@ -1135,7 +1135,7 @@
     }
 }
 
-// Check if two strokes intersect
+// Check if two strokes intersect using rasterization for pixel-accurate detection
 - (BOOL)doStrokesIntersect:(NSInteger)strokeIndex1 strokeIndex2:(NSInteger)strokeIndex2 {
     // Get path indices of first stroke
     NSInteger startIndex1 = [[strokeMarkers objectAtIndex:strokeIndex1] integerValue];
@@ -1157,7 +1157,7 @@
         endIndex2 = [paths count] - 1;
     }
     
-    // First do a quick check with overall bounds
+    // Calculate combined bounds of both strokes
     NSRect bounds1 = NSZeroRect;
     BOOL first1 = YES;
     
@@ -1193,152 +1193,192 @@
         return NO;
     }
     
-    // For more precise detection, check path segments individually
-    CGFloat closestDistance = CGFLOAT_MAX;
+    // Calculate the union of both bounds to create our rasterization area
+    NSRect unionBounds = NSUnionRect(bounds1, bounds2);
     
-    // Check each path segment in stroke 1 against each segment in stroke 2
+    // Make sure the bounds have a minimum size
+    if (unionBounds.size.width < 2.0) unionBounds.size.width = 2.0;
+    if (unionBounds.size.height < 2.0) unionBounds.size.height = 2.0;
+    
+    // Round up to integer size for our bitmap
+    int width = (int)ceil(unionBounds.size.width);
+    int height = (int)ceil(unionBounds.size.height);
+    
+    // Create a bitmap context for rasterization
+    // We use 8 bits per component with a single 8-bit alpha channel
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceGray();
+    
+    // Create two separate bitmap contexts to render each stroke
+    CGContextRef bitmap1 = CGBitmapContextCreate(NULL, width, height, 8, width, colorSpace, kCGImageAlphaOnly);
+    CGContextRef bitmap2 = CGBitmapContextCreate(NULL, width, height, 8, width, colorSpace, kCGImageAlphaOnly);
+    
+    if (!bitmap1 || !bitmap2) {
+        NSLog(@"Failed to create bitmap contexts for intersection check");
+        if (bitmap1) CGContextRelease(bitmap1);
+        if (bitmap2) CGContextRelease(bitmap2);
+        CGColorSpaceRelease(colorSpace);
+        
+        // If bitmap creation fails, just assume no intersection
+        return NO;
+    }
+    
+    // Prepare the contexts
+    CGContextClearRect(bitmap1, CGRectMake(0, 0, width, height));
+    CGContextClearRect(bitmap2, CGRectMake(0, 0, width, height));
+    
+    // Save the current graphics state
+    CGContextSaveGState(bitmap1);
+    CGContextSaveGState(bitmap2);
+    
+    // Set up coordinate system to match our bounds
+    // First, flip the context because Core Graphics has origin at bottom-left
+    CGContextTranslateCTM(bitmap1, 0, height);
+    CGContextScaleCTM(bitmap1, 1.0, -1.0);
+    CGContextTranslateCTM(bitmap2, 0, height);
+    CGContextScaleCTM(bitmap2, 1.0, -1.0);
+    
+    // Then translate so that our bounds origin is at (0,0) in the context
+    CGContextTranslateCTM(bitmap1, -unionBounds.origin.x, -unionBounds.origin.y);
+    CGContextTranslateCTM(bitmap2, -unionBounds.origin.x, -unionBounds.origin.y);
+    
+    // Set up drawing parameters
+    CGContextSetLineWidth(bitmap1, 1.0);  // Minimum line width for visibility
+    CGContextSetLineWidth(bitmap2, 1.0);
+    CGContextSetLineCap(bitmap1, kCGLineCapRound);
+    CGContextSetLineCap(bitmap2, kCGLineCapRound);
+    CGContextSetLineJoin(bitmap1, kCGLineJoinRound);
+    CGContextSetLineJoin(bitmap2, kCGLineJoinRound);
+    CGContextSetStrokeColorWithColor(bitmap1, CGColorGetConstantColor(kCGColorWhite));
+    CGContextSetStrokeColorWithColor(bitmap2, CGColorGetConstantColor(kCGColorWhite));
+    
+    // Draw first stroke into bitmap1
     for (NSInteger i = startIndex1; i <= endIndex1; i++) {
-        NSBezierPath *path1 = [paths objectAtIndex:i];
+        NSBezierPath *path = [paths objectAtIndex:i];
+        CGPathRef cgPath = [self CGPathFromNSBezierPath:path];
+        if (cgPath) {
+            CGContextAddPath(bitmap1, cgPath);
+            CGPathRelease(cgPath);
+        }
+    }
+    CGContextStrokePath(bitmap1);
+    
+    // Draw second stroke into bitmap2
+    for (NSInteger i = startIndex2; i <= endIndex2; i++) {
+        NSBezierPath *path = [paths objectAtIndex:i];
+        CGPathRef cgPath = [self CGPathFromNSBezierPath:path];
+        if (cgPath) {
+            CGContextAddPath(bitmap2, cgPath);
+            CGPathRelease(cgPath);
+        }
+    }
+    CGContextStrokePath(bitmap2);
+    
+    // Restore the graphics state
+    CGContextRestoreGState(bitmap1);
+    CGContextRestoreGState(bitmap2);
+    
+    // Get the bitmap data
+    unsigned char *data1 = CGBitmapContextGetData(bitmap1);
+    unsigned char *data2 = CGBitmapContextGetData(bitmap2);
+    
+    BOOL hasIntersection = NO;
+    
+    // Check for pixel overlap between the two bitmaps with a 1-pixel margin
+    if (data1 && data2) {
+        // Radius of 1 means check surrounding pixels
+        int margin = 1;
         
-        for (NSInteger j = startIndex2; j <= endIndex2; j++) {
-            NSBezierPath *path2 = [paths objectAtIndex:j];
-            
-            // Find minimum distance between these two path segments
-            CGFloat distance = [self findMinimumDistanceBetweenPath:path1 andPath:path2];
-            if (distance < closestDistance) {
-                closestDistance = distance;
+        for (int y = margin; y < height - margin; y++) {
+            for (int x = margin; x < width - margin; x++) {
+                int index = y * width + x;
+                
+                // If the current pixel in bitmap1 has content
+                if (data1[index] > 0) {
+                    // Check this pixel and surrounding pixels in bitmap2 (within the margin)
+                    BOOL foundNearby = NO;
+                    
+                    for (int dy = -margin; dy <= margin && !foundNearby; dy++) {
+                        for (int dx = -margin; dx <= margin && !foundNearby; dx++) {
+                            int nx = x + dx;
+                            int ny = y + dy;
+                            
+                            // Make sure we're within bounds
+                            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                                int neighborIndex = ny * width + nx;
+                                
+                                // If a nearby pixel in bitmap2 has content, consider it an intersection
+                                if (data2[neighborIndex] > 0) {
+                                    foundNearby = YES;
+                                    hasIntersection = YES;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (foundNearby) {
+                        break;
+                    }
+                }
             }
-            
-            // If we found a very close distance, consider them intersecting
-            if (closestDistance < 1.0) {
-                return YES;
-            }
+            if (hasIntersection) break;
         }
     }
     
-    // Consider paths intersecting if they're within a reasonable distance
-    return (closestDistance < 1.0);
+    // Clean up
+    CGContextRelease(bitmap1);
+    CGContextRelease(bitmap2);
+    CGColorSpaceRelease(colorSpace);
+    
+    return hasIntersection;
 }
 
-// Find minimum distance between two path segments
-- (CGFloat)findMinimumDistanceBetweenPath:(NSBezierPath *)path1 andPath:(NSBezierPath *)path2 {
-    // Quick bounds check first
-    NSRect bounds1 = [path1 bounds];
-    NSRect bounds2 = [path2 bounds];
+// Convert NSBezierPath to CGPathRef for use with Core Graphics
+- (CGPathRef)CGPathFromNSBezierPath:(NSBezierPath *)path {
+    CGMutablePathRef cgPath = CGPathCreateMutable();
+    NSPoint points[3];
+    BOOL didClosePath = NO;
     
-    // Add a margin to the bounds
-    bounds1 = NSInsetRect(bounds1, -5, -5);
-    bounds2 = NSInsetRect(bounds2, -5, -5);
-    
-    // If bounds don't intersect, calculate approximate distance between bounds
-    if (!NSIntersectsRect(bounds1, bounds2)) {
-        CGFloat dx = 0.0;
-        CGFloat dy = 0.0;
+    for (NSInteger i = 0; i < [path elementCount]; i++) {
+        NSBezierPathElement element = [path elementAtIndex:i associatedPoints:points];
         
-        // Calculate horizontal distance
-        if (NSMaxX(bounds1) < NSMinX(bounds2)) {
-            dx = NSMinX(bounds2) - NSMaxX(bounds1);
-        } else if (NSMaxX(bounds2) < NSMinX(bounds1)) {
-            dx = NSMinX(bounds1) - NSMaxX(bounds2);
-        }
-        
-        // Calculate vertical distance
-        if (NSMaxY(bounds1) < NSMinY(bounds2)) {
-            dy = NSMinY(bounds2) - NSMaxY(bounds1);
-        } else if (NSMaxY(bounds2) < NSMinY(bounds1)) {
-            dy = NSMinY(bounds1) - NSMaxY(bounds2);
-        }
-        
-        // Return the distance between bounds
-        return sqrt(dx*dx + dy*dy);
-    }
-    
-    // For simple paths, just check a few sample points
-    CGFloat minDistance = CGFLOAT_MAX;
-    
-    // Get a few representative points from first path
-    NSArray *points1 = [self getSamplePointsFromPath:path1];
-    NSArray *points2 = [self getSamplePointsFromPath:path2];
-    
-    // Check all pairs of points
-    for (NSValue *value1 in points1) {
-        NSPoint point1 = [value1 pointValue];
-        
-        for (NSValue *value2 in points2) {
-            NSPoint point2 = [value2 pointValue];
-            
-            // Calculate distance between points
-            CGFloat dx = point2.x - point1.x;
-            CGFloat dy = point2.y - point1.y;
-            CGFloat distance = sqrt(dx*dx + dy*dy);
-            
-            if (distance < minDistance) {
-                minDistance = distance;
-            }
+        switch(element) {
+            case NSMoveToBezierPathElement:
+                CGPathMoveToPoint(cgPath, NULL, points[0].x, points[0].y);
+                break;
+                
+            case NSLineToBezierPathElement:
+                CGPathAddLineToPoint(cgPath, NULL, points[0].x, points[0].y);
+                break;
+                
+            case NSCurveToBezierPathElement:
+                CGPathAddCurveToPoint(cgPath, NULL, 
+                                     points[0].x, points[0].y,
+                                     points[1].x, points[1].y,
+                                     points[2].x, points[2].y);
+                break;
+                
+            case NSClosePathBezierPathElement:
+                CGPathCloseSubpath(cgPath);
+                didClosePath = YES;
+                break;
         }
     }
     
-    return minDistance;
+    CGFloat lineWidth = [path lineWidth];
+    if (lineWidth < 1.0) lineWidth = 1.0;
+    
+    // If the path has a line width, apply it as a stroke
+    CGPathRef strokedPath = CGPathCreateCopyByStrokingPath(
+        cgPath, NULL, lineWidth, kCGLineCapRound, kCGLineJoinRound, 0);
+    
+    CGPathRelease(cgPath);
+    return strokedPath;
 }
 
-// Get sample points from a path for distance calculations
-- (NSArray *)getSamplePointsFromPath:(NSBezierPath *)path {
-    NSMutableArray *points = [NSMutableArray array];
-    NSInteger elementCount = [path elementCount];
-    
-    // Use all points from the path for maximum accuracy
-    NSPoint pointData[3];
-    
-    for (NSInteger i = 0; i < elementCount; i++) {
-        NSBezierPathElement element = [path elementAtIndex:i associatedPoints:pointData];
-        
-        if (element == NSMoveToBezierPathElement || element == NSLineToBezierPathElement) {
-            [points addObject:[NSValue valueWithPoint:pointData[0]]];
-        } else if (element == NSCurveToBezierPathElement) {
-            // For curve elements, include all control points for better accuracy
-            [points addObject:[NSValue valueWithPoint:pointData[0]]];
-            [points addObject:[NSValue valueWithPoint:pointData[1]]];
-            [points addObject:[NSValue valueWithPoint:pointData[2]]];
-            
-            // Add intermediate points along the curve for better detection
-            // Add more sample points along the curve (10 intermediate points)
-            for (CGFloat t = 0.1; t < 1.0; t += 0.1) {
-                NSPoint prevPoint = (i > 0) ? [self pointAtIndex:i-1 forPath:path] : pointData[0];
-                NSPoint p = [self evaluateBezierForT:t 
-                                            startPt:prevPoint 
-                                           controlPt1:pointData[0] 
-                                           controlPt2:pointData[1] 
-                                              endPt:pointData[2]];
-                [points addObject:[NSValue valueWithPoint:p]];
-            }
-        }
-    }
-    
-    return points;
-}
+// This method has been removed as it's no longer needed with the rasterization approach
 
-// Helper method to get a point at a specific index in a path
-- (NSPoint)pointAtIndex:(NSInteger)index forPath:(NSBezierPath *)path {
-    NSPoint pointData[3];
-    [path elementAtIndex:index associatedPoints:pointData];
-    return pointData[0];
-}
-
-// Evaluate a cubic Bezier curve at parameter t
-- (NSPoint)evaluateBezierForT:(CGFloat)t startPt:(NSPoint)p0 controlPt1:(NSPoint)p1 controlPt2:(NSPoint)p2 endPt:(NSPoint)p3 {
-    CGFloat u = 1.0 - t;
-    CGFloat tt = t * t;
-    CGFloat uu = u * u;
-    CGFloat uuu = uu * u;
-    CGFloat ttt = tt * t;
-    
-    // Cubic Bezier formula
-    NSPoint result;
-    result.x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x;
-    result.y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
-    
-    return result;
-}
+// These methods have been removed as they're no longer needed with the rasterization approach
 
 #pragma mark - Color Persistence
 
