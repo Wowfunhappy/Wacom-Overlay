@@ -64,7 +64,7 @@
         
         // Create Preset Colors label
         NSTextField *presetsLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 90, 260, 17)];
-        [presetsLabel setStringValue:@"Preset Colors (Ctrl+Cmd+Opt+Shift+C to toggle):"];
+        [presetsLabel setStringValue:@"Preset Colors:"];
         [presetsLabel setBezeled:NO];
         [presetsLabel setDrawsBackground:NO];
         [presetsLabel setEditable:NO];

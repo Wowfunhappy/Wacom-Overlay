@@ -122,24 +122,22 @@
             NSString *characters = [theEvent charactersIgnoringModifiers];
             
             // In OS X 10.9, we need to use the raw values instead of the constants
-            BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
             BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
-            BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
             BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-            BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+            BOOL isD = ([characters isEqualToString:@"D"] || [characters isEqualToString:@"d"]);
             BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
             
-            NSLog(@"TabletApplication: Key event in sendEvent - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, IsZ: %d, chars: %@",
-                  isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, isZ, characters);
+            NSLog(@"TabletApplication: Key event in sendEvent - Command: %d, Shift: %d, IsD: %d, IsZ: %d, chars: %@",
+                  isCommandDown, isShiftDown, isD, isZ, characters);
             
             // Make sure the overlay window is frontmost
             if (overlayWindow != nil) {
                 [overlayWindow orderFront:nil];
                 DrawView *drawView = (DrawView *)[overlayWindow contentView];
                 
-                // Handle color toggle
-                if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-                    NSLog(@"TabletApplication: Special color toggle detected in sendEvent");
+                // Handle color toggle with Cmd+D
+                if (isCommandDown && isD && !isShiftDown) {
+                    NSLog(@"TabletApplication: Color toggle (Cmd+D) detected in sendEvent");
                     if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
                         [drawView toggleToNextColor];
                         return; // Don't forward the event
@@ -198,20 +196,18 @@
     if (wacomDriverPID != 0 && eventSourcePID == wacomDriverPID) {
         NSLog(@"TabletApplication: Global keyboard event from Wacom driver detected");
         
-        // Check for the special key combination: Ctrl+Cmd+Option+Shift+C
+        // Check for keyboard shortcuts
         NSUInteger flags = [theEvent modifierFlags];
         NSString *characters = [theEvent charactersIgnoringModifiers];
         
         // In OS X 10.9, we need to use the raw values instead of the constants
-        BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
         BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
-        BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
         BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-        BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+        BOOL isD = ([characters isEqualToString:@"D"] || [characters isEqualToString:@"d"]);
         BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
         
-        NSLog(@"TabletApplication: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, IsZ: %d, chars: %@",
-              isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, isZ, characters);
+        NSLog(@"TabletApplication: Key modifiers - Command: %d, Shift: %d, IsD: %d, IsZ: %d, chars: %@",
+              isCommandDown, isShiftDown, isD, isZ, characters);
         
         // First ensure the overlay window is frontmost no matter which space we're on
         if (overlayWindow != nil && [overlayWindow respondsToSelector:@selector(orderFront:)]) {
@@ -222,9 +218,9 @@
         if (overlayWindow != nil) {
             DrawView *drawView = (DrawView *)[overlayWindow contentView];
             
-            // Handle the color toggle shortcut
-            if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-                NSLog(@"TabletApplication: Special color toggle combination detected from Wacom");
+            // Handle the color toggle shortcut (Cmd+D)
+            if (isCommandDown && isD && !isShiftDown) {
+                NSLog(@"TabletApplication: Color toggle (Cmd+D) detected from Wacom");
                 if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
                     [drawView toggleToNextColor];
                 }

@@ -478,20 +478,17 @@
     if (wacomDriverPID != 0 && eventSourcePID == wacomDriverPID) {
         NSLog(@"DrawView: Keyboard event from Wacom tablet detected");
         
-        // Check for the special key combination: control+cmd+option+shift+C
-        // Note: We can't detect delete and return as simultaneous key presses in standard key events
+        // Check for keyboard shortcuts
         // In OS X 10.9, we need to use the raw values instead of the constants
-        BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
         BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
-        BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
         BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-        BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+        BOOL isD = ([characters isEqualToString:@"D"] || [characters isEqualToString:@"d"]);
         
-        NSLog(@"DrawView: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d",
-              isControlDown, isCommandDown, isOptionDown, isShiftDown, isC);
+        NSLog(@"DrawView: Key modifiers - Command: %d, Shift: %d, IsD: %d",
+              isCommandDown, isShiftDown, isD);
         
-        if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-            NSLog(@"DrawView: Special key combination detected from Wacom, toggling color");
+        if (isCommandDown && isD && !isShiftDown) {
+            NSLog(@"DrawView: Color toggle (Cmd+D) detected from Wacom, toggling color");
             [self toggleToNextColor];
         } else {
             // Otherwise, pass the event up the responder chain
