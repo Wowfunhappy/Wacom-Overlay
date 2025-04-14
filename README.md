@@ -16,7 +16,6 @@ The app was tested on Mac OS X 10.9 Mavericks with a Wacom Intuos P S CTL-490 an
 - Fix drawing on desktops other than the one where the app was opened, and on Fullscreen apps.
 - Add menu bar icon.
 - Clean up the UI.
-- Save colors to NSUserDefaults so they persist across app restarts.
 - Confirm app doesn't break with multiple monitors.
 - Add ability to move existing strokes by dragging them while holding down the pen's scroll button?
 - Add ability to create text boxes?

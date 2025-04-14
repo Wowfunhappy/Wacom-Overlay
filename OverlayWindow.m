@@ -18,8 +18,12 @@
         // Set window properties for an overlay that won't interfere with mouse
         [self setAcceptsMouseMovedEvents:YES];
         
-        // Set a high level so we're above other windows
-        [self setLevel:NSFloatingWindowLevel];
+        // Set a high level so we're above ALL windows, including full screen apps
+        [self setLevel:NSScreenSaverWindowLevel];
+        
+        // IMPORTANT: Make the window visible on all spaces (virtual desktops)
+        [self setCollectionBehavior:NSWindowCollectionBehaviorCanJoinAllSpaces | 
+                                   NSWindowCollectionBehaviorFullScreenAuxiliary];
         
         // Important: We want the window to ignore ALL mouse events
         // We'll use a global event monitor to catch tablet events instead

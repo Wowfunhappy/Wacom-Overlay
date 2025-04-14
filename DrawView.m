@@ -133,11 +133,36 @@
         }
     }
     
+    // For multi-screen setups or spaces, ensure the window is frontmost and properly positioned
+    if (![window isVisible]) {
+        [window orderFront:nil];
+    }
+
+    // First determine which screen the point is on
+    NSScreen *pointScreen = nil;
+    for (NSScreen *screen in [NSScreen screens]) {
+        if (NSPointInRect(screenPoint, [screen frame])) {
+            pointScreen = screen;
+            break;
+        }
+    }
+    
+    // If we can't determine which screen contains the point, use main screen
+    if (!pointScreen) {
+        pointScreen = [NSScreen mainScreen];
+    }
+    
     // Convert screen coordinates to window coordinates
     NSPoint windowPoint = [window convertScreenToBase:screenPoint];
     
     // Convert window coordinates to view coordinates
     NSPoint viewPoint = [self convertPoint:windowPoint fromView:nil];
+    
+    // Log for debugging
+    NSLog(@"Converting coordinates - Screen: %@ -> Window: %@ -> View: %@", 
+          NSStringFromPoint(screenPoint), 
+          NSStringFromPoint(windowPoint),
+          NSStringFromPoint(viewPoint));
     
     return viewPoint;
 }

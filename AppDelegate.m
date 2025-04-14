@@ -17,6 +17,18 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     if ([nsEvent isTabletPointerEvent] || [nsEvent isTabletProximityEvent]) {
         NSLog(@"CG Event tap captured tablet event: %lld", (long long)type);
         
+        // Handle tablet proximity events (pen entering/leaving tablet)
+        if ([nsEvent isTabletProximityEvent]) {
+            NSLog(@"Tablet proximity event detected");
+            
+            // Forward to TabletApplication for handling
+            TabletApplication *app = (TabletApplication *)NSApp;
+            if ([app respondsToSelector:@selector(handleProximityEvent:)]) {
+                [app handleProximityEvent:nsEvent];
+            }
+        }
+        
+        // Handle tablet pointer events (drawing)
         if ([nsEvent isTabletPointerEvent]) {
             NSLog(@"Tablet pointer event - forwarding to draw view");
             
@@ -31,13 +43,29 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     else if (type == kCGEventKeyDown) {
         NSLog(@"Key down event captured: %@", nsEvent);
         
-        // Check if Command key is pressed
+        // First check for our special color toggle shortcut
         NSUInteger flags = [nsEvent modifierFlags];
-        if (flags & NSCommandKeyMask) {
-            NSString *characters = [nsEvent characters];
-            
+        NSString *characters = [nsEvent charactersIgnoringModifiers];
+        
+        // In OS X 10.9, use the raw bit values
+        BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
+        BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
+        BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
+        BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+        BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+        
+        if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
+            NSLog(@"Special color toggle key combination detected");
+            if ([appDelegate.drawView respondsToSelector:@selector(toggleToNextColor)]) {
+                [appDelegate.drawView toggleToNextColor];
+                return NULL; // Consume the event
+            }
+        }
+        
+        // Check for standard editing shortcuts
+        if (isCommandDown) {
             // Check for Cmd+Z (undo)
-            if ([characters isEqualToString:@"z"] && !(flags & NSShiftKeyMask)) {
+            if ([characters isEqualToString:@"z"] && !isShiftDown) {
                 NSLog(@"Cmd+Z detected - forwarding to draw view");
                 if ([appDelegate.drawView canUndo]) {
                     [appDelegate.drawView undo];
@@ -48,7 +76,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             }
             
             // Check for Cmd+Shift+Z (redo)
-            if ((flags & NSShiftKeyMask) && ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"])) {
+            if (isShiftDown && ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"])) {
                 NSLog(@"Cmd+Shift+Z detected - forwarding to draw view");
                 if ([appDelegate.drawView canRedo]) {
                     [appDelegate.drawView redo];
@@ -70,9 +98,43 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 @synthesize controlPanel;
 @synthesize drawView;
 
+- (NSRect)totalScreensRect {
+    NSRect totalRect = NSZeroRect;
+    
+    for (NSScreen *screen in [NSScreen screens]) {
+        // Use frame, not visibleFrame to cover menu bars, docks, etc.
+        NSRect screenRect = [screen frame];
+        
+        if (NSIsEmptyRect(totalRect)) {
+            totalRect = screenRect;
+        } else {
+            totalRect = NSUnionRect(totalRect, screenRect);
+        }
+    }
+    
+    // If somehow there are no screens, return main screen rect
+    if (NSIsEmptyRect(totalRect) && [NSScreen mainScreen]) {
+        totalRect = [[NSScreen mainScreen] frame];
+    }
+    
+    NSLog(@"Total screens rect: %@", NSStringFromRect(totalRect));
+    return totalRect;
+}
+
+- (void)updateOverlayWindowFrame {
+    // Get the union of all screen frames
+    NSRect totalScreensRect = [self totalScreensRect];
+    
+    // Update the window frame
+    [self.overlayWindow setFrame:totalScreensRect display:YES];
+    
+    NSLog(@"Updated overlay window frame to cover all screens: %@", NSStringFromRect(totalScreensRect));
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
-    // Create the overlay window that will receive tablet events
-    self.overlayWindow = [[OverlayWindow alloc] initWithContentRect:[[NSScreen mainScreen] frame]
+    // Create the overlay window that will cover all screens
+    NSRect totalScreensRect = [self totalScreensRect];
+    self.overlayWindow = [[OverlayWindow alloc] initWithContentRect:totalScreensRect
                                                           styleMask:0 // NSBorderlessWindowMask
                                                             backing:NSBackingStoreBuffered
                                                               defer:NO];
@@ -84,9 +146,6 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     
     // CRITICAL: This makes mouse events pass through to applications below
     [self.overlayWindow setIgnoresMouseEvents:YES];
-    
-    // Make sure window is always above other windows and gets tablet events
-    [self.overlayWindow setLevel:NSScreenSaverWindowLevel];
     
     // Get the draw view from the overlay window
     self.drawView = (DrawView *)[self.overlayWindow contentView];
@@ -102,6 +161,12 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     TabletApplication *app = (TabletApplication *)NSApp;
     [app setOverlayWindow:self.overlayWindow];
     
+    // Register for screen configuration change notifications
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(screenParametersDidChange:)
+                                                 name:NSApplicationDidChangeScreenParametersNotification
+                                               object:nil];
+    
     NSLog(@"Connected overlay window to TabletApplication for event interception");
     
     // Set up event tap to capture ALL tablet events and keyboard events system-wide
@@ -109,11 +174,17 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     CGEventMask eventMask = CGEventMaskBit(kCGEventLeftMouseDown) | 
                             CGEventMaskBit(kCGEventLeftMouseUp) | 
                             CGEventMaskBit(kCGEventLeftMouseDragged) |
+                            CGEventMaskBit(kCGEventRightMouseDown) |  // Add right mouse for completeness
+                            CGEventMaskBit(kCGEventRightMouseUp) |
+                            CGEventMaskBit(kCGEventRightMouseDragged) |
+                            CGEventMaskBit(kCGEventOtherMouseDown) |  // Add other mouse buttons
+                            CGEventMaskBit(kCGEventOtherMouseUp) |
+                            CGEventMaskBit(kCGEventOtherMouseDragged) |
                             CGEventMaskBit(kCGEventKeyDown) |
                             CGEventMaskBit(kCGEventKeyUp);
     
-    // Create the event tap
-    eventTap = CGEventTapCreate(kCGSessionEventTap,  // Tap at session level (lowest level)
+    // Create the event tap at the highest level possible to capture everything
+    eventTap = CGEventTapCreate(kCGHIDEventTap,      // HID level tap to get events from all processes
                                 kCGHeadInsertEventTap, // Insert at beginning of list
                                 kCGEventTapOptionDefault, // Default options
                                 eventMask,    // Events to capture
@@ -121,7 +192,13 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                                 self);  // User data passed to callback
     
     if (!eventTap) {
-        NSLog(@"ERROR: Failed to create event tap!");
+        NSLog(@"ERROR: Failed to create event tap! Make sure the app has accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility");
+        
+        // Check if accessibility is enabled
+        NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
+        BOOL accessibilityEnabled = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+        
+        NSLog(@"Accessibility enabled: %@", accessibilityEnabled ? @"YES" : @"NO");
         return;
     }
     
@@ -136,11 +213,19 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     
     NSLog(@"Event tap installed successfully");
     
+    // Show the overlay window above all other windows
+    [self.overlayWindow orderFront:nil];
+    
     // Register for notifications
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(applicationWillTerminate:)
                                                  name:NSApplicationWillTerminateNotification
                                                object:nil];
+}
+
+- (void)screenParametersDidChange:(NSNotification *)notification {
+    NSLog(@"Screen parameters changed - updating overlay window frame");
+    [self updateOverlayWindowFrame];
 }
 
 - (void)applicationWillTerminate:(NSNotification *)aNotification {
