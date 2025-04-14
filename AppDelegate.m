@@ -56,8 +56,25 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         
         if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
             NSLog(@"Special color toggle key combination detected");
-            if ([appDelegate.drawView respondsToSelector:@selector(toggleToNextColor)]) {
-                [appDelegate.drawView toggleToNextColor];
+            
+            // Make sure the overlay window and drawing view are active,
+            // even if we're on a different desktop/space
+            [appDelegate.overlayWindow orderFront:nil];
+            
+            // Ensure the draw view receives the command
+            DrawView *drawView = appDelegate.drawView;
+            if (!drawView) {
+                // Try to get the draw view if it's not directly available
+                TabletApplication *app = (TabletApplication *)NSApp;
+                OverlayWindow *window = [app overlayWindow];
+                if (window) {
+                    drawView = (DrawView *)[window contentView];
+                }
+            }
+            
+            if (drawView && [drawView respondsToSelector:@selector(toggleToNextColor)]) {
+                NSLog(@"Executing color toggle command across desktops");
+                [drawView toggleToNextColor];
                 return NULL; // Consume the event
             }
         }
@@ -67,8 +84,25 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             // Check for Cmd+Z (undo)
             if ([characters isEqualToString:@"z"] && !isShiftDown) {
                 NSLog(@"Cmd+Z detected - forwarding to draw view");
-                if ([appDelegate.drawView canUndo]) {
-                    [appDelegate.drawView undo];
+                
+                // Make sure the overlay window and drawing view are active,
+                // even if we're on a different desktop/space
+                [appDelegate.overlayWindow orderFront:nil];
+                
+                // Ensure the draw view receives the command
+                DrawView *drawView = appDelegate.drawView;
+                if (!drawView) {
+                    // Try to get the draw view if it's not directly available
+                    TabletApplication *app = (TabletApplication *)NSApp;
+                    OverlayWindow *window = [app overlayWindow];
+                    if (window) {
+                        drawView = (DrawView *)[window contentView];
+                    }
+                }
+                
+                if (drawView && [drawView canUndo]) {
+                    NSLog(@"Executing undo command across desktops");
+                    [drawView undo];
                     return NULL; // Consume the event only if we handled it
                 } else {
                     NSLog(@"Nothing to undo - passing event through");
@@ -78,8 +112,25 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             // Check for Cmd+Shift+Z (redo)
             if (isShiftDown && ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"])) {
                 NSLog(@"Cmd+Shift+Z detected - forwarding to draw view");
-                if ([appDelegate.drawView canRedo]) {
-                    [appDelegate.drawView redo];
+                
+                // Make sure the overlay window and drawing view are active,
+                // even if we're on a different desktop/space
+                [appDelegate.overlayWindow orderFront:nil];
+                
+                // Ensure the draw view receives the command
+                DrawView *drawView = appDelegate.drawView;
+                if (!drawView) {
+                    // Try to get the draw view if it's not directly available
+                    TabletApplication *app = (TabletApplication *)NSApp;
+                    OverlayWindow *window = [app overlayWindow];
+                    if (window) {
+                        drawView = (DrawView *)[window contentView];
+                    }
+                }
+                
+                if (drawView && [drawView canRedo]) {
+                    NSLog(@"Executing redo command across desktops");
+                    [drawView redo];
                     return NULL; // Consume the event only if we handled it
                 } else {
                     NSLog(@"Nothing to redo - passing event through");

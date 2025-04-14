@@ -113,18 +113,43 @@
         BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
         BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
         BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+        BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
         
-        NSLog(@"TabletApplication: Key event in sendEvent - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, chars: %@",
-              isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, characters);
+        NSLog(@"TabletApplication: Key event in sendEvent - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, IsZ: %d, chars: %@",
+              isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, isZ, characters);
         
-        if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-            NSLog(@"TabletApplication: Special key combination detected in sendEvent, forwarding to DrawView");
+        // Make sure the overlay window is frontmost
+        if (overlayWindow != nil) {
+            [overlayWindow orderFront:nil];
+            DrawView *drawView = (DrawView *)[overlayWindow contentView];
             
-            // Forward to DrawView's toggleToNextColor method
-            if (overlayWindow != nil) {
-                DrawView *drawView = (DrawView *)[overlayWindow contentView];
+            // Handle color toggle
+            if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
+                NSLog(@"TabletApplication: Special color toggle detected in sendEvent");
                 if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
                     [drawView toggleToNextColor];
+                    return; // Don't forward the event
+                }
+            }
+            
+            // Handle undo shortcut
+            if (isCommandDown && !isShiftDown && isZ) {
+                NSLog(@"TabletApplication: Undo command detected in sendEvent");
+                if ([drawView respondsToSelector:@selector(canUndo)] && 
+                    [drawView respondsToSelector:@selector(undo)] && 
+                    [drawView canUndo]) {
+                    [drawView undo];
+                    return; // Don't forward the event
+                }
+            }
+            
+            // Handle redo shortcut
+            if (isCommandDown && isShiftDown && isZ) {
+                NSLog(@"TabletApplication: Redo command detected in sendEvent");
+                if ([drawView respondsToSelector:@selector(canRedo)] && 
+                    [drawView respondsToSelector:@selector(redo)] && 
+                    [drawView canRedo]) {
+                    [drawView redo];
                     return; // Don't forward the event
                 }
             }
@@ -148,18 +173,45 @@
     BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
     BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
     BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
+    BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
     
-    NSLog(@"TabletApplication: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, chars: %@",
-          isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, characters);
+    NSLog(@"TabletApplication: Key modifiers - Control: %d, Command: %d, Option: %d, Shift: %d, IsC: %d, IsZ: %d, chars: %@",
+          isControlDown, isCommandDown, isOptionDown, isShiftDown, isC, isZ, characters);
     
-    if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-        NSLog(@"TabletApplication: Special key combination detected, forwarding to DrawView");
+    // First ensure the overlay window is frontmost no matter which space we're on
+    if (overlayWindow != nil && [overlayWindow respondsToSelector:@selector(orderFront:)]) {
+        [overlayWindow orderFront:nil];
+    }
+    
+    // Handle all relevant keyboard commands
+    if (overlayWindow != nil) {
+        DrawView *drawView = (DrawView *)[overlayWindow contentView];
         
-        // Forward to DrawView's toggleToNextColor method
-        if (overlayWindow != nil) {
-            DrawView *drawView = (DrawView *)[overlayWindow contentView];
+        // Handle the color toggle shortcut
+        if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
+            NSLog(@"TabletApplication: Special color toggle combination detected");
             if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
                 [drawView toggleToNextColor];
+            }
+        }
+        
+        // Handle undo command
+        if (isCommandDown && !isShiftDown && isZ) {
+            NSLog(@"TabletApplication: Undo command detected");
+            if ([drawView respondsToSelector:@selector(canUndo)] && 
+                [drawView respondsToSelector:@selector(undo)] && 
+                [drawView canUndo]) {
+                [drawView undo];
+            }
+        }
+        
+        // Handle redo command
+        if (isCommandDown && isShiftDown && isZ) {
+            NSLog(@"TabletApplication: Redo command detected");
+            if ([drawView respondsToSelector:@selector(canRedo)] && 
+                [drawView respondsToSelector:@selector(redo)] && 
+                [drawView canRedo]) {
+                [drawView redo];
             }
         }
     }
