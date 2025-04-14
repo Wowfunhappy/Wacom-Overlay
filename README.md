@@ -16,6 +16,8 @@ The app was tested on Mac OS X 10.9 Mavericks with a Wacom Intuos P S CTL-490 an
   - Claude absolutely could not figure this out for some reason! After a bunch of back and forth, I gave up.
 
 ## Todo
+- Keyboard shortcut to clear drawing (works on Keyboard or Tablet)
+- Keyboard shortcut that can be held down to make pen act like mouse (Tablet only) 
 - Confirm app doesn't break with multiple monitors.
 - Change cursor when pen is near tablet to indicate current color and/or eraser mode
 - Add ability to create text boxes? (Would be useful for teaching.)
