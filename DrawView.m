@@ -23,14 +23,8 @@
         undoPathColors = [[NSMutableArray alloc] init];
         undoStrokeMarkers = [[NSMutableArray alloc] init];
         
-        // Initialize the preset colors
-        presetColors = [[NSArray alloc] initWithObjects:
-                        [NSColor redColor],
-                        [NSColor blueColor],
-                        [NSColor greenColor],
-                        nil];
-        currentColorIndex = 0;
-        self.strokeColor = [presetColors objectAtIndex:currentColorIndex];
+        // Load colors from NSUserDefaults or use defaults if none are stored
+        [self loadColorsFromUserDefaults];
         
         self.lineWidth = 2.0;
         mErasing = NO;
@@ -684,6 +678,9 @@
         }
     }
     
+    // Save the updated colors to user defaults
+    [self saveColorsToUserDefaults];
+    
     NSLog(@"DrawView: Set preset color at index %ld to %@", (long)index, color);
 }
 
@@ -705,6 +702,10 @@
             break;
         }
     }
+    
+    // Save the current color index to user defaults
+    [[NSUserDefaults standardUserDefaults] setInteger:currentColorIndex forKey:@"CurrentColorIndex"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
     
     NSLog(@"DrawView: Toggled to next color: %@", self.strokeColor);
 }
@@ -778,6 +779,80 @@
 
 - (void)clearSmoothingBuffer {
     [pointBuffer removeAllObjects];
+}
+
+#pragma mark - Color Persistence
+
+- (void)loadColorsFromUserDefaults {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSData *colorData1 = [defaults objectForKey:@"PresetColor1"];
+    NSData *colorData2 = [defaults objectForKey:@"PresetColor2"];
+    NSData *colorData3 = [defaults objectForKey:@"PresetColor3"];
+    NSInteger savedColorIndex = [defaults integerForKey:@"CurrentColorIndex"];
+    
+    // Default colors in case user defaults are not available
+    NSColor *color1 = [NSColor redColor];
+    NSColor *color2 = [NSColor blueColor];
+    NSColor *color3 = [NSColor greenColor];
+    
+    // If we have stored colors, unarchive them
+    if (colorData1) {
+        NSColor *loadedColor = [NSUnarchiver unarchiveObjectWithData:colorData1];
+        if (loadedColor) {
+            color1 = loadedColor;
+        }
+    }
+    
+    if (colorData2) {
+        NSColor *loadedColor = [NSUnarchiver unarchiveObjectWithData:colorData2];
+        if (loadedColor) {
+            color2 = loadedColor;
+        }
+    }
+    
+    if (colorData3) {
+        NSColor *loadedColor = [NSUnarchiver unarchiveObjectWithData:colorData3];
+        if (loadedColor) {
+            color3 = loadedColor;
+        }
+    }
+    
+    // Initialize preset colors with loaded values
+    presetColors = [[NSArray alloc] initWithObjects:color1, color2, color3, nil];
+    
+    // Set current color index (default to 0 if out of range)
+    if (savedColorIndex >= 0 && savedColorIndex < [presetColors count]) {
+        currentColorIndex = savedColorIndex;
+    } else {
+        currentColorIndex = 0;
+    }
+    
+    // Set current stroke color
+    self.strokeColor = [presetColors objectAtIndex:currentColorIndex];
+    
+    NSLog(@"DrawView: Loaded colors from user defaults");
+}
+
+- (void)saveColorsToUserDefaults {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    
+    // Archive the colors
+    if ([presetColors count] >= 3) {
+        NSData *colorData1 = [NSArchiver archivedDataWithRootObject:[presetColors objectAtIndex:0]];
+        NSData *colorData2 = [NSArchiver archivedDataWithRootObject:[presetColors objectAtIndex:1]];
+        NSData *colorData3 = [NSArchiver archivedDataWithRootObject:[presetColors objectAtIndex:2]];
+        
+        // Save to user defaults
+        [defaults setObject:colorData1 forKey:@"PresetColor1"];
+        [defaults setObject:colorData2 forKey:@"PresetColor2"];
+        [defaults setObject:colorData3 forKey:@"PresetColor3"];
+        [defaults setInteger:currentColorIndex forKey:@"CurrentColorIndex"];
+        
+        // Synchronize to ensure the data is saved
+        [defaults synchronize];
+        
+        NSLog(@"DrawView: Saved colors to user defaults");
+    }
 }
 
 @end
