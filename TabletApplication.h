@@ -6,6 +6,9 @@
     id globalTabletEventMonitor;
     id globalTabletProximityMonitor;
     id globalKeyEventMonitor;
+    NSCursor *customCursor;
+    NSCursor *defaultCursor;
+    BOOL isPenInProximity;
 }
 
 - (void)handleProximityEvent:(NSEvent *)theEvent;
@@ -14,5 +17,6 @@
 - (OverlayWindow *)overlayWindow;
 - (void)setupGlobalEventMonitors;
 - (void)tearDownGlobalEventMonitors;
+- (void)setupCustomCursor;
 
 @end

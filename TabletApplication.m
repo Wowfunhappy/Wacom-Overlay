@@ -12,6 +12,7 @@
     // Setup global event monitors once we have a window
     if (overlayWindow != nil) {
         [self setupGlobalEventMonitors];
+        [self setupCustomCursor];
     }
 }
 
@@ -148,6 +149,23 @@
     NSLog(@"Tablet details - deviceID: %lu, entering: %d, type: %lu", 
          (unsigned long)deviceID, enteringProximity, (unsigned long)pointingDeviceType);
     
+    // Change the cursor when pen enters or leaves proximity
+    if (enteringProximity) {
+        // Pen is entering proximity - set custom cursor
+        if (!isPenInProximity && customCursor) {
+            NSLog(@"Setting custom cursor - pen entering proximity");
+            [customCursor set];
+            isPenInProximity = YES;
+        }
+    } else {
+        // Pen is leaving proximity - restore default cursor
+        if (isPenInProximity && defaultCursor) {
+            NSLog(@"Restoring default cursor - pen leaving proximity");
+            [defaultCursor set];
+            isPenInProximity = NO;
+        }
+    }
+    
     // Set up the keys for the dictionary
     NSArray *keys = [NSArray arrayWithObjects:
                      kVendorID,
@@ -181,9 +199,44 @@
     [[NSNotificationCenter defaultCenter] postNotificationName:kProximityNotification object:self userInfo:proximityDict];
 }
 
+- (void)setupCustomCursor {
+    // Initialize pen proximity flag
+    isPenInProximity = NO;
+    
+    // Store the default cursor for later use
+    defaultCursor = [[NSCursor arrowCursor] retain];
+    
+    // Load the menuIcon image for our custom cursor
+    NSString *menuIconPath = [[NSBundle mainBundle] pathForResource:@"menuIcon" ofType:@"png"];
+    if (menuIconPath) {
+        NSImage *menuImage = [[[NSImage alloc] initWithContentsOfFile:menuIconPath] autorelease];
+        
+        if (menuImage) {
+            // Create a cursor with the hotspot at the bottom left (tip of the pencil)
+            // Get the image size to properly set the bottom left position
+            NSSize imageSize = [menuImage size];
+            // NSCursor coordinates have (0,0) at the bottom left, going up to (width,height)
+            // Since our image is showing the hotspot is currently at top left,
+            // we need to flip it and set it at y = height - offset
+            customCursor = [[NSCursor alloc] initWithImage:menuImage hotSpot:NSMakePoint(0, imageSize.height - 1)];
+            NSLog(@"Custom pen cursor created successfully with hotspot at bottom left");
+        } else {
+            NSLog(@"Failed to load menuIcon.png for custom cursor");
+            customCursor = [defaultCursor retain];
+        }
+    } else {
+        NSLog(@"Failed to find menuIcon.png for custom cursor");
+        customCursor = [defaultCursor retain];
+    }
+}
+
 - (void)dealloc {
     // Clean up our global event monitors
     [self tearDownGlobalEventMonitors];
+    
+    // Release our cursors
+    [customCursor release];
+    [defaultCursor release];
     
     // Don't release overlayWindow - we don't own it
     [super dealloc];
