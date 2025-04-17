@@ -437,19 +437,47 @@
 }
 
 - (void)clear {
-    [paths removeAllObjects];
-    [pathColors removeAllObjects];
-    [strokeMarkers removeAllObjects];
-    [undoPaths removeAllObjects];
-    [undoPathColors removeAllObjects];
-    [undoStrokeMarkers removeAllObjects];
+    // Save count for redo information
+    NSInteger pathCount = [paths count];
+    
+    // Only save to undo stack if there are paths to save
+    if (pathCount > 0) {
+        // First, clear the undo stack to make room for the current state
+        [undoPaths removeAllObjects];
+        [undoPathColors removeAllObjects];
+        [undoStrokeMarkers removeAllObjects];
+        
+        // Move all current paths to the undo stack (in reverse for proper order)
+        for (NSInteger i = pathCount - 1; i >= 0; i--) {
+            NSBezierPath *pathToSave = [[paths objectAtIndex:i] retain];
+            NSColor *colorToSave = [[pathColors objectAtIndex:i] retain];
+            
+            [undoPaths addObject:pathToSave];
+            [undoPathColors addObject:colorToSave];
+            
+            [pathToSave release];
+            [colorToSave release];
+        }
+        
+        // Store the stroke markers info
+        // We need a special marker to indicate this was a "clear" operation
+        // Store the total number of paths as a marker
+        [undoStrokeMarkers addObject:[NSNumber numberWithInteger:pathCount]];
+        
+        // Now clear the current state
+        [paths removeAllObjects];
+        [pathColors removeAllObjects];
+        [strokeMarkers removeAllObjects];
+    }
+    
     if (currentPath) {
         [currentPath release];
         currentPath = nil;
     }
+    
     [self setNeedsDisplay:YES];
     
-    NSLog(@"DrawView: Cleared all paths");
+    NSLog(@"DrawView: Cleared all paths - stored %ld paths in undo stack", (long)pathCount);
 }
 
 // Make sure the view accepts first responder to get events
@@ -863,37 +891,78 @@
         
         // Check if we have enough segments in the undo stack
         if ([undoPaths count] >= segmentCount) {
-            // Add a marker for where this stroke starts in the paths array
-            [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
+            // Check if this is a regular stroke or a complete drawing restoration (clear operation)
+            BOOL isRestoringClearedDrawing = ([strokeMarkers count] == 0 && segmentCount > 1);
             
-            // Move the paths and colors back (in reverse because we stored them in reverse)
-            for (NSInteger i = 0; i < segmentCount; i++) {
-                NSInteger undoIndex = [undoPaths count] - 1;
+            if (isRestoringClearedDrawing) {
+                NSLog(@"DrawView: Detected redo of a clear operation with %ld paths", (long)segmentCount);
                 
-                // Get the path and color to redo
-                NSBezierPath *pathToRedo = [[undoPaths objectAtIndex:undoIndex] retain];
-                NSColor *colorToRedo = [[undoPathColors objectAtIndex:undoIndex] retain];
+                // When restoring from a clear, we need to rebuild the stroke markers
+                // Add markers for each stroke in the cleared drawing
+                // First, add a marker for the first path
+                if (segmentCount > 0) {
+                    [strokeMarkers addObject:[NSNumber numberWithInteger:0]];
+                }
                 
-                // Add to active paths
-                [paths addObject:pathToRedo];
-                [pathColors addObject:colorToRedo];
+                // Move all paths back in reverse order (to preserve the original order)
+                for (NSInteger i = 0; i < segmentCount; i++) {
+                    NSInteger undoIndex = [undoPaths count] - 1;
+                    
+                    // Get the path and color to restore
+                    NSBezierPath *pathToRedo = [[undoPaths objectAtIndex:undoIndex] retain];
+                    NSColor *colorToRedo = [[undoPathColors objectAtIndex:undoIndex] retain];
+                    
+                    // Add to active paths
+                    [paths addObject:pathToRedo];
+                    [pathColors addObject:colorToRedo];
+                    
+                    // Remove from undo stacks
+                    [undoPaths removeObjectAtIndex:undoIndex];
+                    [undoPathColors removeObjectAtIndex:undoIndex];
+                    
+                    // Release our retained copies
+                    [pathToRedo release];
+                    [colorToRedo release];
+                }
                 
-                // Remove from undo stacks
-                [undoPaths removeObjectAtIndex:undoIndex];
-                [undoPathColors removeObjectAtIndex:undoIndex];
+                // Remove the marker for this clear operation from undo stack
+                [undoStrokeMarkers removeLastObject];
                 
-                // Release our retained copies
-                [pathToRedo release];
-                [colorToRedo release];
+                NSLog(@"DrawView: Redo of clear operation performed, restored %ld paths", (long)segmentCount);
+            } else {
+                // This is a regular stroke redo (normal behavior)
+                // Add a marker for where this stroke starts in the paths array
+                [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
+                
+                // Move the paths and colors back (in reverse because we stored them in reverse)
+                for (NSInteger i = 0; i < segmentCount; i++) {
+                    NSInteger undoIndex = [undoPaths count] - 1;
+                    
+                    // Get the path and color to redo
+                    NSBezierPath *pathToRedo = [[undoPaths objectAtIndex:undoIndex] retain];
+                    NSColor *colorToRedo = [[undoPathColors objectAtIndex:undoIndex] retain];
+                    
+                    // Add to active paths
+                    [paths addObject:pathToRedo];
+                    [pathColors addObject:colorToRedo];
+                    
+                    // Remove from undo stacks
+                    [undoPaths removeObjectAtIndex:undoIndex];
+                    [undoPathColors removeObjectAtIndex:undoIndex];
+                    
+                    // Release our retained copies
+                    [pathToRedo release];
+                    [colorToRedo release];
+                }
+                
+                // Remove the marker for this stroke
+                [undoStrokeMarkers removeLastObject];
+                
+                NSLog(@"DrawView: Redo of normal stroke performed, restored stroke with %ld segments", (long)segmentCount);
             }
-            
-            // Remove the marker for this stroke
-            [undoStrokeMarkers removeLastObject];
             
             // Redraw
             [self setNeedsDisplay:YES];
-            
-            NSLog(@"DrawView: Redo performed, restored stroke with %ld segments", (long)segmentCount);
         } else {
             NSLog(@"DrawView: Error - undo stack count doesn't match marker. Need %ld but have %lu", 
                   (long)segmentCount, (unsigned long)[undoPaths count]);
