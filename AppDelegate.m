@@ -14,6 +14,9 @@
 @synthesize drawView;
 @synthesize wacomDriverPID;
 @synthesize statusItem;
+@synthesize lastUndoKeyTime;
+@synthesize isUndoKeyDown;
+@synthesize undoHoldTimer;
 
 // Find the Wacom Tablet Driver PID
 - (pid_t)findWacomDriverPID {
@@ -161,7 +164,31 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                 } 
                 // Handle undo (Cmd+Z)
                 else if (isCommandDown && !isShiftDown && isZ) {
-                    NSLog(@"EVENT TAP: Cmd+Z - undo detected");
+                    // Get the current time
+                    NSDate *now = [NSDate date];
+                    
+                    // Mark that the undo key is down
+                    appDelegate.isUndoKeyDown = YES;
+                    
+                    // Cancel any existing timer
+                    if (appDelegate.undoHoldTimer) {
+                        [appDelegate.undoHoldTimer invalidate];
+                        appDelegate.undoHoldTimer = nil;
+                    }
+                    
+                    // Create a new timer that will trigger after holding the key for 0.5 seconds
+                    appDelegate.undoHoldTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
+                                                                      target:appDelegate
+                                                                    selector:@selector(undoKeyHoldTimerFired:)
+                                                                    userInfo:nil
+                                                                     repeats:NO];
+                    
+                    // Store the current time
+                    appDelegate.lastUndoKeyTime = [now retain];
+                    
+                    NSLog(@"EVENT TAP: Cmd+Z - undo detected, starting hold timer");
+                    
+                    // Perform a normal undo for the initial key press
                     if ([drawView respondsToSelector:@selector(canUndo)] && 
                         [drawView respondsToSelector:@selector(undo)]) {
                         if ([drawView canUndo]) {
@@ -192,6 +219,44 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             return NULL;
         } else {
             NSLog(@"EVENT TAP: Keyboard event not from Wacom tablet - passing through");
+        }
+    }
+    // Handle key up events
+    else if (type == kCGEventKeyUp) {
+        // Get the source process ID of the event
+        pid_t eventSourcePID = CGEventGetIntegerValueField(event, kCGEventSourceUnixProcessID);
+        
+        // Only handle keyboard events from the Wacom driver
+        if (appDelegate.wacomDriverPID != 0 && eventSourcePID == appDelegate.wacomDriverPID) {
+            // Get event details
+            NSUInteger flags = [nsEvent modifierFlags];
+            NSString *characters = [nsEvent charactersIgnoringModifiers];
+            
+            // In OS X 10.9, use the raw bit values
+            BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
+            BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+            BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
+            
+            // Check if this is the undo key releasing
+            if (isZ && !isShiftDown) {
+                NSLog(@"EVENT TAP: Cmd+Z key up detected");
+                
+                // Mark undo key as no longer down
+                appDelegate.isUndoKeyDown = NO;
+                
+                // Cancel the hold timer if it exists
+                if (appDelegate.undoHoldTimer) {
+                    [appDelegate.undoHoldTimer invalidate];
+                    appDelegate.undoHoldTimer = nil;
+                }
+                
+                // Release the stored time
+                [appDelegate.lastUndoKeyTime release];
+                appDelegate.lastUndoKeyTime = nil;
+            }
+            
+            // Block the key up event from propagating
+            return NULL;
         }
     }
     
@@ -399,7 +464,23 @@ NSMenu *colorMenu = nil;
     }
 }
 
+// This method is called after the undo key has been held down for a moment
+- (void)undoKeyHoldTimerFired:(NSTimer *)timer {
+    NSLog(@"EVENT TAP: Undo key hold timer fired - clearing drawing");
+    
+    // Only clear if the undo key is still down
+    if (self.isUndoKeyDown) {
+        if ([self.drawView respondsToSelector:@selector(clear)]) {
+            [self.drawView clear];
+        }
+    }
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+    // Initialize undo key tracker
+    self.isUndoKeyDown = NO;
+    self.lastUndoKeyTime = nil;
+    
     // Find the Wacom driver PID
     wacomDriverPID = [self findWacomDriverPID];
     if (wacomDriverPID == 0) {
@@ -459,7 +540,7 @@ NSMenu *colorMenu = nil;
                             CGEventMaskBit(kCGEventOtherMouseUp) |
                             CGEventMaskBit(kCGEventOtherMouseDragged) |
                             CGEventMaskBit(kCGEventKeyDown) |
-                            CGEventMaskBit(kCGEventKeyUp);
+                            CGEventMaskBit(kCGEventKeyUp);   // Make sure we capture key up events too
     
     // Create the event tap at the session level
     // Previously: kCGHIDEventTap, but this might not block events properly
@@ -530,6 +611,18 @@ NSMenu *colorMenu = nil;
     if (eventMonitor) {
         [NSEvent removeMonitor:eventMonitor];
     }
+    
+    // Clean up timers
+    if (self.undoHoldTimer) {
+        [self.undoHoldTimer invalidate];
+        self.undoHoldTimer = nil;
+    }
+    
+    // Release the stored time
+    [self.lastUndoKeyTime release];
+    self.lastUndoKeyTime = nil;
+    
+    // No need to clean up key tracking dictionary as we're not using it anymore
 }
 
 // Clean up memory
@@ -550,6 +643,12 @@ NSMenu *colorMenu = nil;
         [NSEvent removeMonitor:eventMonitor];
     }
     
+    if (undoHoldTimer) {
+        [undoHoldTimer invalidate];
+    }
+    
+    [undoHoldTimer release];
+    [lastUndoKeyTime release];
     [overlayWindow release];
     [controlPanel release];
     [drawView release];
