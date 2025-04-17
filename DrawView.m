@@ -442,32 +442,45 @@
     
     // Only save to undo stack if there are paths to save
     if (pathCount > 0) {
-        // First, clear the undo stack to make room for the current state
-        [undoPaths removeAllObjects];
-        [undoPathColors removeAllObjects];
-        [undoStrokeMarkers removeAllObjects];
+        // Make a deep copy of the current drawing state for undo/redo
+        NSMutableArray *savedPaths = [[NSMutableArray alloc] initWithCapacity:pathCount];
+        NSMutableArray *savedColors = [[NSMutableArray alloc] initWithCapacity:pathCount];
+        NSMutableArray *savedMarkers = [strokeMarkers mutableCopy];
         
-        // Move all current paths to the undo stack (in reverse for proper order)
-        for (NSInteger i = pathCount - 1; i >= 0; i--) {
-            NSBezierPath *pathToSave = [[paths objectAtIndex:i] retain];
-            NSColor *colorToSave = [[pathColors objectAtIndex:i] retain];
+        // Copy all paths and colors (deep copy)
+        for (NSInteger i = 0; i < pathCount; i++) {
+            NSBezierPath *pathCopy = [[paths objectAtIndex:i] copy];
+            NSColor *colorCopy = [[pathColors objectAtIndex:i] copy];
             
-            [undoPaths addObject:pathToSave];
-            [undoPathColors addObject:colorToSave];
+            [savedPaths addObject:pathCopy];
+            [savedColors addObject:colorCopy];
             
-            [pathToSave release];
-            [colorToSave release];
+            [pathCopy release];
+            [colorCopy release];
         }
         
-        // Store the stroke markers info
-        // We need a special marker to indicate this was a "clear" operation
-        // Store the total number of paths as a marker
-        [undoStrokeMarkers addObject:[NSNumber numberWithInteger:pathCount]];
+        // Create a special clear operation container that holds the entire drawing state
+        NSMutableDictionary *clearState = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                        savedPaths, @"paths",
+                                        savedColors, @"colors",
+                                        savedMarkers, @"markers",
+                                        nil];
+        
+        // Store a single clear operation record in the undo stack
+        // (we don't use the normal undoPaths/undoPathColors for the clear operation)
+        [undoStrokeMarkers addObject:clearState];
+        
+        // Release the temp arrays since they're now retained by the dictionary
+        [savedPaths release];
+        [savedColors release];
+        [savedMarkers release];
         
         // Now clear the current state
         [paths removeAllObjects];
         [pathColors removeAllObjects];
         [strokeMarkers removeAllObjects];
+        
+        NSLog(@"DrawView: Cleared drawing state - saved %ld paths for redo", (long)pathCount);
     }
     
     if (currentPath) {
@@ -535,7 +548,22 @@
 
 // Check if there's something to redo
 - (BOOL)canRedo {
-    return ([undoPaths count] > 0 && [undoStrokeMarkers count] > 0);
+    if ([undoStrokeMarkers count] > 0) {
+        id markerObject = [undoStrokeMarkers lastObject];
+        
+        // For a clear operation marker (dictionary)
+        if ([markerObject isKindOfClass:[NSDictionary class]]) {
+            // For clear operations, we just need to check if the marker exists
+            return YES;
+        }
+        // For a regular stroke marker (number)
+        else if ([markerObject isKindOfClass:[NSNumber class]]) {
+            NSInteger segmentCount = [markerObject integerValue];
+            return [undoPaths count] >= segmentCount;
+        }
+    }
+    
+    return NO;
 }
 
 // Handle proximity notification from tablet
@@ -884,53 +912,78 @@
     
     // Check if there are any paths to redo
     if ([self canRedo]) {
-        // Get the segment count for the stroke to redo
-        NSInteger segmentCount = [[undoStrokeMarkers lastObject] integerValue];
+        // Get the marker object for the stroke to redo
+        id markerObject = [undoStrokeMarkers lastObject];
         
-        NSLog(@"DrawView: Attempting to redo stroke with %ld segments", (long)segmentCount);
+        // Check if this is a clear operation (marker is a dictionary) or a regular stroke (marker is a number)
+        BOOL isClearOperation = [markerObject isKindOfClass:[NSDictionary class]];
         
-        // Check if we have enough segments in the undo stack
-        if ([undoPaths count] >= segmentCount) {
-            // Check if this is a regular stroke or a complete drawing restoration (clear operation)
-            BOOL isRestoringClearedDrawing = ([strokeMarkers count] == 0 && segmentCount > 1);
+        if (isClearOperation) {
+            // This is a restoration of a cleared drawing
+            NSDictionary *clearState = (NSDictionary *)markerObject;
             
-            if (isRestoringClearedDrawing) {
-                NSLog(@"DrawView: Detected redo of a clear operation with %ld paths", (long)segmentCount);
-                
-                // When restoring from a clear, we need to rebuild the stroke markers
-                // Add markers for each stroke in the cleared drawing
-                // First, add a marker for the first path
-                if (segmentCount > 0) {
-                    [strokeMarkers addObject:[NSNumber numberWithInteger:0]];
+            // Get the saved drawing state from the clear operation
+            NSArray *savedPaths = [clearState objectForKey:@"paths"];
+            NSArray *savedColors = [clearState objectForKey:@"colors"];
+            NSArray *savedMarkers = [clearState objectForKey:@"markers"];
+            
+            NSInteger pathCount = [savedPaths count];
+            
+            NSLog(@"DrawView: Detected redo of a clear operation with %ld paths", (long)pathCount);
+            
+            // Create an undo record of the current state before replacing it
+            // Only if we have paths to save
+            if ([paths count] > 0) {
+                for (NSInteger i = [paths count] - 1; i >= 0; i--) {
+                    NSBezierPath *pathToSave = [[paths objectAtIndex:i] retain];
+                    NSColor *colorToSave = [[pathColors objectAtIndex:i] retain];
+                    
+                    [undoPaths addObject:pathToSave];
+                    [undoPathColors addObject:colorToSave];
+                    
+                    [pathToSave release];
+                    [colorToSave release];
                 }
                 
-                // Move all paths back in reverse order (to preserve the original order)
-                for (NSInteger i = 0; i < segmentCount; i++) {
-                    NSInteger undoIndex = [undoPaths count] - 1;
-                    
-                    // Get the path and color to restore
-                    NSBezierPath *pathToRedo = [[undoPaths objectAtIndex:undoIndex] retain];
-                    NSColor *colorToRedo = [[undoPathColors objectAtIndex:undoIndex] retain];
-                    
-                    // Add to active paths
-                    [paths addObject:pathToRedo];
-                    [pathColors addObject:colorToRedo];
-                    
-                    // Remove from undo stacks
-                    [undoPaths removeObjectAtIndex:undoIndex];
-                    [undoPathColors removeObjectAtIndex:undoIndex];
-                    
-                    // Release our retained copies
-                    [pathToRedo release];
-                    [colorToRedo release];
-                }
+                // Save the count of the current state's paths
+                [undoStrokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
+            }
+            
+            // Clear the current state
+            [paths removeAllObjects];
+            [pathColors removeAllObjects];
+            [strokeMarkers removeAllObjects];
+            
+            // Restore the saved state (make deep copies to avoid issues)
+            for (NSInteger i = 0; i < pathCount; i++) {
+                NSBezierPath *pathCopy = [[savedPaths objectAtIndex:i] copy];
+                NSColor *colorCopy = [[savedColors objectAtIndex:i] copy];
                 
-                // Remove the marker for this clear operation from undo stack
-                [undoStrokeMarkers removeLastObject];
+                [paths addObject:pathCopy];
+                [pathColors addObject:colorCopy];
                 
-                NSLog(@"DrawView: Redo of clear operation performed, restored %ld paths", (long)segmentCount);
-            } else {
-                // This is a regular stroke redo (normal behavior)
+                [pathCopy release];
+                [colorCopy release];
+            }
+            
+            // Restore the markers
+            for (NSNumber *marker in savedMarkers) {
+                [strokeMarkers addObject:marker];
+            }
+            
+            // Remove the clear state marker from the undo stack
+            [undoStrokeMarkers removeLastObject];
+            
+            NSLog(@"DrawView: Redo of clear operation performed, restored %ld paths with %lu stroke markers", 
+                  (long)pathCount, (unsigned long)[strokeMarkers count]);
+        } else {
+            // This is a regular stroke (marker is a number)
+            NSInteger segmentCount = [markerObject integerValue];
+            
+            NSLog(@"DrawView: Attempting to redo regular stroke with %ld segments", (long)segmentCount);
+            
+            // Check if we have enough segments in the undo stack
+            if ([undoPaths count] >= segmentCount) {
                 // Add a marker for where this stroke starts in the paths array
                 [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
                 
@@ -955,18 +1008,17 @@
                     [colorToRedo release];
                 }
                 
-                // Remove the marker for this stroke
+                // Remove the marker for this stroke from undo stack
                 [undoStrokeMarkers removeLastObject];
                 
                 NSLog(@"DrawView: Redo of normal stroke performed, restored stroke with %ld segments", (long)segmentCount);
+            } else {
+                NSLog(@"DrawView: Error - not enough paths in undo stack to redo");
             }
-            
-            // Redraw
-            [self setNeedsDisplay:YES];
-        } else {
-            NSLog(@"DrawView: Error - undo stack count doesn't match marker. Need %ld but have %lu", 
-                  (long)segmentCount, (unsigned long)[undoPaths count]);
         }
+        
+        // Redraw
+        [self setNeedsDisplay:YES];
     } else {
         NSLog(@"DrawView: Nothing to redo");
     }
