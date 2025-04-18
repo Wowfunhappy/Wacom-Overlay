@@ -40,17 +40,9 @@
     globalTabletEventMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:mouseEventMask
                                                  handler:^(NSEvent *event) {
         // Only handle tablet events, not regular mouse events
+        // Note: isTabletPointerEvent will return false when F14 is pressed due to our override
         if ([event isTabletPointerEvent]) {
             NSLog(@"TabletApplication: Global event monitor caught tablet event");
-            
-            // Get the AppDelegate to check normal mode state
-            AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
-            
-            // Skip handling if in normal mode (Cmd+; is pressed)
-            if ([[appDelegate valueForKey:@"isNormalModeKeyDown"] boolValue]) {
-                NSLog(@"TabletApplication: Skipping tablet event due to normal mode (Cmd+;)");
-                return;
-            }
             
             // Get draw view from our overlay window
             if (overlayWindow != nil) {
@@ -87,18 +79,9 @@
 
 - (void)sendEvent:(NSEvent *)theEvent {
     // Check if this is a tablet event
+    // Note: isTabletPointerEvent will return false when F14 is pressed due to our override
     if ([theEvent isTabletPointerEvent]) {
         NSLog(@"TabletApplication: Intercepting tablet event: %@", [theEvent description]);
-        
-        // Get the AppDelegate to check normal mode state
-        AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
-        
-        // Skip special handling if in normal mode (Cmd+; is pressed)
-        if ([[appDelegate valueForKey:@"isNormalModeKeyDown"] boolValue]) {
-            NSLog(@"TabletApplication: Passing tablet event through due to normal mode (Cmd+;)");
-            [super sendEvent:theEvent];
-            return;
-        }
         
         // Get draw view from our overlay window
         if (overlayWindow != nil) {

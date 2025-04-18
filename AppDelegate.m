@@ -64,19 +64,15 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         
         // Handle tablet pointer events (drawing)
         if ([nsEvent isTabletPointerEvent]) {
-            // Check if we're in normal mouse mode (Cmd+; is held down)
-            if (appDelegate.isNormalModeKeyDown) {
-                NSLog(@"Tablet pointer event - passing through due to Cmd+; being pressed");
-                return event;  // Return event unmodified to let it propagate
-            } else {
-                NSLog(@"Tablet pointer event - forwarding to draw view");
-                
-                // Forward to our draw view
-                [appDelegate.drawView mouseEvent:nsEvent];
-                
-                // Prevent the event from propagating to other applications
-                return NULL; // Return NULL to stop event propagation
-            }
+            // Note: With our TabletEvents.m changes, isTabletPointerEvent will
+            // already return false when F14 is pressed, so this condition won't be true in normal mode
+            NSLog(@"Tablet pointer event - forwarding to draw view");
+            
+            // Forward to our draw view
+            [appDelegate.drawView mouseEvent:nsEvent];
+            
+            // Prevent the event from propagating to other applications
+            return NULL; // Return NULL to stop event propagation
         }
     }
     // Handle mouse events (for selecting and dragging strokes)

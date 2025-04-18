@@ -1,4 +1,5 @@
 #import "TabletEvents.h"
+#import "AppDelegate.h"
 
 NSString *kProximityNotification = @"Proximity Event Notification"; 
 
@@ -42,6 +43,13 @@ NSString *kEnterProximity = @"enterProximity";
 }
 
 - (BOOL)isTabletPointerEvent {
+    // First, check if we're in normal mouse mode (F14 held down)
+    AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
+    if ([[appDelegate valueForKey:@"isNormalModeKeyDown"] boolValue]) {
+        // When F14 is held down, pretend this is not a tablet event
+        return NO;
+    }
+    
     if ([self isEventClassMouse]) {
         if ([self subtype] == 1) { // NSTabletPointEventSubtype
             return YES;
@@ -56,6 +64,13 @@ NSString *kEnterProximity = @"enterProximity";
 }
 
 - (BOOL)isTabletProximityEvent {
+    // First, check if we're in normal mouse mode (F14 held down)
+    AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
+    if ([[appDelegate valueForKey:@"isNormalModeKeyDown"] boolValue]) {
+        // When F14 is held down, pretend this is not a tablet event
+        return NO;
+    }
+    
     if ([self isEventClassMouse]) {
         if ([self subtype] == 2) { // NSTabletProximityEventSubtype
             return YES;
