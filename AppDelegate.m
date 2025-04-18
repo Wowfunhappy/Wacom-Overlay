@@ -16,6 +16,7 @@
 @synthesize statusItem;
 @synthesize lastUndoKeyTime;
 @synthesize isUndoKeyDown;
+@synthesize isNormalModeKeyDown;
 @synthesize undoHoldTimer;
 
 // Find the Wacom Tablet Driver PID
@@ -63,13 +64,19 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         
         // Handle tablet pointer events (drawing)
         if ([nsEvent isTabletPointerEvent]) {
-            NSLog(@"Tablet pointer event - forwarding to draw view");
-            
-            // Forward to our draw view
-            [appDelegate.drawView mouseEvent:nsEvent];
-            
-            // Prevent the event from propagating to other applications
-            return NULL; // Return NULL to stop event propagation
+            // Check if we're in normal mouse mode (Cmd+; is held down)
+            if (appDelegate.isNormalModeKeyDown) {
+                NSLog(@"Tablet pointer event - passing through due to Cmd+; being pressed");
+                return event;  // Return event unmodified to let it propagate
+            } else {
+                NSLog(@"Tablet pointer event - forwarding to draw view");
+                
+                // Forward to our draw view
+                [appDelegate.drawView mouseEvent:nsEvent];
+                
+                // Prevent the event from propagating to other applications
+                return NULL; // Return NULL to stop event propagation
+            }
         }
     }
     // Handle mouse events (for selecting and dragging strokes)
@@ -161,6 +168,14 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                     if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
                         [drawView toggleToNextColor];
                     }
+                }
+                // Handle F14 to temporarily act as a normal mouse while pressed
+                else if ([nsEvent keyCode] == 107) { // F14 key code
+                    NSLog(@"EVENT TAP: F14 detected - temporarily disabling tablet interception");
+                    // Set the flag to indicate normal mode is active
+                    appDelegate.isNormalModeKeyDown = YES;
+                    // Block this key event from propagating to the system
+                    return NULL;
                 } 
                 // Handle undo (Cmd+Z)
                 else if (isCommandDown && !isShiftDown && isZ) {
@@ -233,12 +248,19 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             NSString *characters = [nsEvent charactersIgnoringModifiers];
             
             // In OS X 10.9, use the raw bit values
-            BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
             BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
             BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
             
+            // Handle F14 key up (normal mode toggle off) - we need to check actual key codes
+            // Since F14 key release might not match the same character representation
+            NSUInteger keyCode = [nsEvent keyCode];
+            if (keyCode == 107) { // F14 key code
+                NSLog(@"EVENT TAP: F14 key up detected - re-enabling tablet interception");
+                appDelegate.isNormalModeKeyDown = NO;
+                return NULL; // Block this keyup from propagating
+            }
             // Check if this is the undo key releasing
-            if (isZ && !isShiftDown) {
+            else if (isZ && !isShiftDown) {
                 NSLog(@"EVENT TAP: Cmd+Z key up detected");
                 
                 // Mark undo key as no longer down
@@ -477,8 +499,9 @@ NSMenu *colorMenu = nil;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
-    // Initialize undo key tracker
+    // Initialize key state trackers
     self.isUndoKeyDown = NO;
+    self.isNormalModeKeyDown = NO;
     self.lastUndoKeyTime = nil;
     
     // Find the Wacom driver PID

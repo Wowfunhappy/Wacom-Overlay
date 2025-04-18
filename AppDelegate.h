@@ -19,6 +19,7 @@
 @property (nonatomic, retain) NSStatusItem *statusItem;
 @property (nonatomic, retain) NSDate *lastUndoKeyTime;
 @property (nonatomic, assign) BOOL isUndoKeyDown;
+@property (nonatomic, assign) BOOL isNormalModeKeyDown; // Track Cmd+; state
 @property (nonatomic, retain) NSTimer *undoHoldTimer;
 
 - (pid_t)findWacomDriverPID;
