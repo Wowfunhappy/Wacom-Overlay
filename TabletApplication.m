@@ -151,9 +151,13 @@
          (unsigned long)deviceID, enteringProximity, (unsigned long)pointingDeviceType);
     
     // Change the cursor when pen enters or leaves proximity
+    // Get the AppDelegate to check if F14 is held down
+    AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
+    BOOL isNormalModeActive = [appDelegate isNormalModeKeyDown];
+    
     if (enteringProximity) {
-        // Pen is entering proximity - set custom cursor
-        if (!isPenInProximity && customCursor) {
+        // Pen is entering proximity - set custom cursor only if not in passthrough mode
+        if (!isPenInProximity && customCursor && !isNormalModeActive) {
             NSLog(@"Setting custom cursor - pen entering proximity");
             [customCursor set];
             isPenInProximity = YES;
@@ -259,8 +263,12 @@
 }
 
 - (void)enforceCursor:(NSTimer *)timer {
-    // If pen is in proximity, ensure custom cursor is active
-    if (isPenInProximity && customCursor) {
+    // Check if F14 is held down (passthrough mode)
+    AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
+    BOOL isNormalModeActive = [appDelegate isNormalModeKeyDown];
+    
+    // If pen is in proximity and NOT in passthrough mode, ensure custom cursor is active
+    if (isPenInProximity && customCursor && !isNormalModeActive) {
         // Forcibly set the cursor back to our custom one
         [customCursor set];
         
@@ -274,6 +282,10 @@
                 CGSSetConnectionProperty(connection, connection, propertyString, boolVal);
             }
         }
+    }
+    // If we've entered passthrough mode while pen is in proximity, restore default cursor
+    else if (isPenInProximity && isNormalModeActive && defaultCursor) {
+        [defaultCursor set];
     }
 }
 

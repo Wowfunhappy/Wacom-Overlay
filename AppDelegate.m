@@ -170,6 +170,18 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                     NSLog(@"EVENT TAP: F14 detected - temporarily disabling tablet interception");
                     // Set the flag to indicate normal mode is active
                     appDelegate.isNormalModeKeyDown = YES;
+                    
+                    // If pen is in proximity, immediately restore default cursor
+                    TabletApplication *app = (TabletApplication *)NSApp;
+                    BOOL isPenInProximity = [app valueForKey:@"isPenInProximity"];
+                    if (isPenInProximity) {
+                        // Get default cursor and set it
+                        NSCursor *defaultCursor = [app valueForKey:@"defaultCursor"];
+                        if (defaultCursor) {
+                            [defaultCursor set];
+                        }
+                    }
+                    
                     // Block this key event from propagating to the system
                     return NULL;
                 } 
@@ -253,6 +265,18 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             if (keyCode == 107) { // F14 key code
                 NSLog(@"EVENT TAP: F14 key up detected - re-enabling tablet interception");
                 appDelegate.isNormalModeKeyDown = NO;
+                
+                // If pen is in proximity, restore custom cursor
+                TabletApplication *app = (TabletApplication *)NSApp;
+                BOOL isPenInProximity = [app valueForKey:@"isPenInProximity"];
+                if (isPenInProximity) {
+                    // Get custom cursor and set it
+                    NSCursor *customCursor = [app valueForKey:@"customCursor"];
+                    if (customCursor) {
+                        [customCursor set];
+                    }
+                }
+                
                 return NULL; // Block this keyup from propagating
             }
             // Check if this is the undo key releasing
