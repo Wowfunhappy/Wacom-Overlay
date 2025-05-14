@@ -156,6 +156,16 @@
             NSLog(@"Setting custom cursor - pen entering proximity");
             [customCursor set];
             isPenInProximity = YES;
+            
+            // Start timer to periodically enforce custom cursor
+            if (cursorCheckTimer == nil) {
+                cursorCheckTimer = [NSTimer scheduledTimerWithTimeInterval:0.1 // 100ms interval
+                                                                target:self
+                                                              selector:@selector(enforceCursor:)
+                                                              userInfo:nil
+                                                               repeats:YES];
+                NSLog(@"Started cursor check timer to enforce custom cursor");
+            }
         }
     } else {
         // Pen is leaving proximity - restore default cursor
@@ -163,6 +173,13 @@
             NSLog(@"Restoring default cursor - pen leaving proximity");
             [defaultCursor set];
             isPenInProximity = NO;
+            
+            // Stop the cursor check timer
+            if (cursorCheckTimer != nil) {
+                [cursorCheckTimer invalidate];
+                cursorCheckTimer = nil;
+                NSLog(@"Stopped cursor check timer");
+            }
         }
     }
     
@@ -242,7 +259,32 @@
     }
 }
 
+- (void)enforceCursor:(NSTimer *)timer {
+    // If pen is in proximity, ensure custom cursor is active
+    if (isPenInProximity && customCursor) {
+        // Forcibly set the cursor back to our custom one
+        [customCursor set];
+        
+        // Every few seconds, reapply the CGS connection property
+        static int counter = 0;
+        if (++counter % 20 == 0) { // Every ~2 seconds (20 * 0.1s = 2s)
+            void *connection = CGSDefaultConnectionForThread();
+            if (connection) {
+                CFStringRef propertyString = CFSTR("SetsCursorInBackground");
+                CFBooleanRef boolVal = kCFBooleanTrue;
+                CGSSetConnectionProperty(connection, connection, propertyString, boolVal);
+            }
+        }
+    }
+}
+
 - (void)dealloc {
+    // Invalidate and release the timer
+    if (cursorCheckTimer != nil) {
+        [cursorCheckTimer invalidate];
+        cursorCheckTimer = nil;
+    }
+    
     // Clean up our global event monitors
     [self tearDownGlobalEventMonitors];
     

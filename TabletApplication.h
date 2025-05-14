@@ -14,6 +14,7 @@ OSStatus CGSSetConnectionProperty(void *connection, void *ownerConnection, CFStr
     NSCursor *customCursor;
     NSCursor *defaultCursor;
     BOOL isPenInProximity;
+    NSTimer *cursorCheckTimer;
 }
 
 - (void)handleProximityEvent:(NSEvent *)theEvent;
@@ -23,5 +24,6 @@ OSStatus CGSSetConnectionProperty(void *connection, void *ownerConnection, CFStr
 - (void)setupGlobalEventMonitors;
 - (void)tearDownGlobalEventMonitors;
 - (void)setupCustomCursor;
+- (void)enforceCursor:(NSTimer *)timer;
 
 @end
