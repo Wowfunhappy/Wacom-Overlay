@@ -132,6 +132,12 @@
         [currentPath stroke];
     }
     
+    // Draw straight line preview if shift is down
+    if (straightLinePath && isShiftKeyDown) {
+        [strokeColor set];
+        [straightLinePath stroke];
+    }
+    
     // Removed debug visualization code
 }
 
@@ -226,14 +232,59 @@
         // Apply smoothing to the starting point (adds it to buffer)
         NSPoint smoothedPoint = [self smoothPoint:viewPoint];
         
-        // Start a new path
-        currentPath = [[NSBezierPath bezierPath] retain];
-        [currentPath setLineWidth:lineWidth];
-        [currentPath setLineCapStyle:NSRoundLineCapStyle];
-        [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
+        // Store the starting point for potential straight line drawing
+        straightLineStartPoint = smoothedPoint;
         
-        // Start the path
-        [currentPath moveToPoint:smoothedPoint];
+        // Clean up any existing straight line path
+        if (straightLinePath) {
+            [straightLinePath release];
+            straightLinePath = nil;
+        }
+        
+        // Check current modifier flags to detect shift key
+        NSUInteger currentFlags = [NSEvent modifierFlags];
+        BOOL shiftIsDown = (currentFlags & (1 << 17)) != 0; // NSShiftKeyMask in 10.9
+        
+        // Update our shift key state
+        if (isShiftKeyDown != shiftIsDown) {
+            isShiftKeyDown = shiftIsDown;
+            NSLog(@"DrawView: Shift key detected as %@ during mouseDown", isShiftKeyDown ? @"DOWN" : @"UP");
+        }
+        
+        // Check if shift key is already down when starting a new stroke
+        if (isShiftKeyDown) {
+            NSLog(@"DrawView: Starting in straight line mode (shift already down)");
+            
+            // Set the initial straight line width based on current pressure
+            if ([event pressure] > 0.0) {
+                // Capture the pressure-sensitive width at this moment
+                straightLineWidth = lineWidth * ([event pressure] * 2.0);
+                straightLineWidth = MAX(0.5, straightLineWidth);
+            } else {
+                // Just use the default line width
+                straightLineWidth = lineWidth;
+            }
+            
+            // Create a straight line path for preview
+            straightLinePath = [[NSBezierPath bezierPath] retain];
+            [straightLinePath setLineWidth:straightLineWidth]; // Use the captured width
+            [straightLinePath setLineCapStyle:NSRoundLineCapStyle];
+            [straightLinePath setLineJoinStyle:NSRoundLineJoinStyle];
+            
+            // Draw a straight line from the start point to itself initially
+            [straightLinePath moveToPoint:smoothedPoint];
+            [straightLinePath lineToPoint:smoothedPoint];
+        } else {
+            // Start a new path for normal drawing
+            currentPath = [[NSBezierPath bezierPath] retain];
+            [currentPath setLineWidth:lineWidth];
+            [currentPath setLineCapStyle:NSRoundLineCapStyle];
+            [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
+            
+            // Start the path
+            [currentPath moveToPoint:smoothedPoint];
+        }
+        
         lastPoint = smoothedPoint;
         
         // Add a marker for the start of a new stroke
@@ -333,11 +384,113 @@
             return;
         }
         
-        // If we have a current path, add a line to it
-        if (currentPath) {
-            // Apply smoothing to the point
-            NSPoint smoothedPoint = [self smoothPoint:viewPoint];
+        // Apply smoothing to the point
+        NSPoint smoothedPoint = [self smoothPoint:viewPoint];
+        
+        // Check current modifier flags to detect shift key
+    NSUInteger currentFlags = [NSEvent modifierFlags];
+    BOOL shiftIsDown = (currentFlags & (1 << 17)) != 0; // NSShiftKeyMask in 10.9
+    
+    // Check if shift key state changed
+    if (isShiftKeyDown != shiftIsDown) {
+        // If shift was just pressed, store current point as the straight line start
+        if (shiftIsDown) {
+            // Update the starting point to current position (not original pen down)
+            straightLineStartPoint = smoothedPoint;
             
+            // Store the current line width - we'll use this for the straight line
+            if ([event pressure] > 0.0) {
+                // Capture the pressure-sensitive width at this moment
+                straightLineWidth = lineWidth * ([event pressure] * 2.0);
+                straightLineWidth = MAX(0.5, straightLineWidth);
+            } else {
+                // Just use the default line width
+                straightLineWidth = lineWidth;
+            }
+            
+            NSLog(@"DrawView: Shift key pressed during drag, setting straight line start to: %@ with width: %f", 
+                  NSStringFromPoint(straightLineStartPoint), straightLineWidth);
+        } else {
+            // Shift was just released - finalize the straight line if we have one
+            if (straightLinePath) {
+                NSLog(@"DrawView: Shift key released during drag, finalizing straight line");
+                
+                // Create a segment path for the straight line
+                NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
+                [segmentPath setLineCapStyle:NSRoundLineCapStyle];
+                [segmentPath setLineJoinStyle:NSRoundLineJoinStyle];
+                [segmentPath setLineWidth:straightLineWidth]; // Use the width from when shift was first pressed
+                
+                // Create the straight line segment
+                [segmentPath moveToPoint:straightLineStartPoint];
+                [segmentPath lineToPoint:smoothedPoint];
+                
+                // Add this segment to our collection
+                [paths addObject:segmentPath];
+                [pathColors addObject:[strokeColor copy]]; // Store current color with path
+                [segmentPath release];
+                
+                // Add a marker for the straight line stroke if needed
+                if ([strokeMarkers count] == 0 || 
+                    [[strokeMarkers lastObject] integerValue] != [paths count] - 1) {
+                    [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count] - 1]];
+                }
+                
+                // Clean up the preview path
+                [straightLinePath release];
+                straightLinePath = nil;
+                
+                // Continue normal drawing from this point
+                if (currentPath) {
+                    [currentPath release];
+                }
+                
+                // Start a new path for continued drawing
+                currentPath = [[NSBezierPath bezierPath] retain];
+                [currentPath setLineWidth:lineWidth];
+                [currentPath setLineCapStyle:NSRoundLineCapStyle];
+                [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
+                [currentPath moveToPoint:smoothedPoint];
+            }
+        }
+        
+        // Update shift key state
+        isShiftKeyDown = shiftIsDown;
+        NSLog(@"DrawView: Shift key detected as %@ during mouseDragged", isShiftKeyDown ? @"DOWN" : @"UP");
+    }
+    
+    // Check if shift key is down for straight line drawing
+    if (isShiftKeyDown) {
+            NSLog(@"DrawView: Shift key is down during drag, drawing straight line preview");
+            
+            // Release any existing straight line path and create a new one
+            if (straightLinePath) {
+                [straightLinePath release];
+            }
+            
+            // Create a new path for the straight line
+            straightLinePath = [[NSBezierPath bezierPath] retain];
+            [straightLinePath setLineWidth:straightLineWidth]; // Use the stored width from when shift was pressed
+            [straightLinePath setLineCapStyle:NSRoundLineCapStyle];
+            [straightLinePath setLineJoinStyle:NSRoundLineJoinStyle];
+            
+            NSLog(@"DrawView: Using stored width for straight line: %f", straightLineWidth);
+            
+            // Draw a straight line from the start point to the current point
+            [straightLinePath moveToPoint:straightLineStartPoint];
+            [straightLinePath lineToPoint:smoothedPoint];
+            
+            // Save current point as last point (even though we're not adding segments)
+            lastPoint = smoothedPoint;
+            
+            // Force a redraw to show the preview
+            [self setNeedsDisplay:YES];
+            
+            return;
+        }
+        
+        // Normal drawing mode - if we have a current path, add a line to it
+        if (currentPath) {
             // Create a segment path for this movement with pressure-sensitive width
             NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
             [segmentPath setLineCapStyle:NSRoundLineCapStyle];
@@ -402,25 +555,82 @@
             return;
         }
         
-        // Clear the smoothing buffer at the end of a stroke
-        [self clearSmoothingBuffer];
+        // Check current modifier flags to detect shift key
+        NSUInteger currentFlags = [NSEvent modifierFlags];
+        BOOL shiftIsDown = (currentFlags & (1 << 17)) != 0; // NSShiftKeyMask in 10.9
         
-        // Release the current path as we now use individual segments
-        if (currentPath) {
-            [currentPath release];
-            currentPath = nil;
+        // Update our shift key state
+        if (isShiftKeyDown != shiftIsDown) {
+            isShiftKeyDown = shiftIsDown;
+            NSLog(@"DrawView: Shift key detected as %@ during mouseUp", isShiftKeyDown ? @"DOWN" : @"UP");
+        }
+        
+        // Check if we are in straight line mode (shift key held)
+        if (isShiftKeyDown && straightLinePath) {
+            NSLog(@"DrawView: Completing straight line drawing");
             
-            // Only clear the redo stack if we've actually drawn something new
-            if ([paths count] > 0) {
-                // Clear the redo stack since we've added new paths
-                [undoPaths removeAllObjects];
-                [undoPathColors removeAllObjects];
-                [undoStrokeMarkers removeAllObjects];
-                
-                NSLog(@"DrawView: Cleared redo stack due to new stroke");
+            // Get the current point
+            NSPoint screenPoint = [NSEvent mouseLocation];
+            NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
+            NSPoint smoothedPoint = [self smoothPoint:viewPoint];
+            
+            // Create a segment path for the straight line
+            NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
+            [segmentPath setLineCapStyle:NSRoundLineCapStyle];
+            [segmentPath setLineJoinStyle:NSRoundLineJoinStyle];
+            
+            // Use the width from when shift was first pressed
+            [segmentPath setLineWidth:straightLineWidth];
+            
+            // Create the straight line segment
+            [segmentPath moveToPoint:straightLineStartPoint];
+            [segmentPath lineToPoint:smoothedPoint];
+            
+            // Add this segment to our collection
+            [paths addObject:segmentPath];
+            [pathColors addObject:[strokeColor copy]]; // Store current color with path
+            [segmentPath release];
+            
+            // Add a marker for the straight line stroke if we haven't added one yet
+            if ([strokeMarkers count] == 0 || 
+                [[strokeMarkers lastObject] integerValue] != [paths count] - 1) {
+                [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count] - 1]];
             }
             
-            NSLog(@"DrawView: Finished stroke, total segments: %lu", (unsigned long)[paths count]);
+            // Clean up the preview path
+            [straightLinePath release];
+            straightLinePath = nil;
+            
+            // Clear the redo stack since we've added a new stroke
+            [undoPaths removeAllObjects];
+            [undoPathColors removeAllObjects];
+            [undoStrokeMarkers removeAllObjects];
+            
+            NSLog(@"DrawView: Completed straight line from %@ to %@", 
+                  NSStringFromPoint(straightLineStartPoint), 
+                  NSStringFromPoint(smoothedPoint));
+        }
+        else {
+            // Clear the smoothing buffer at the end of a stroke
+            [self clearSmoothingBuffer];
+            
+            // Release the current path as we now use individual segments
+            if (currentPath) {
+                [currentPath release];
+                currentPath = nil;
+                
+                // Only clear the redo stack if we've actually drawn something new
+                if ([paths count] > 0) {
+                    // Clear the redo stack since we've added new paths
+                    [undoPaths removeAllObjects];
+                    [undoPathColors removeAllObjects];
+                    [undoStrokeMarkers removeAllObjects];
+                    
+                    NSLog(@"DrawView: Cleared redo stack due to new stroke");
+                }
+                
+                NSLog(@"DrawView: Finished stroke, total segments: %lu", (unsigned long)[paths count]);
+            }
         }
     } else {
         NSPoint viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
@@ -430,6 +640,12 @@
         if (isDraggingStroke) {
             isDraggingStroke = NO;
             NSLog(@"DrawView: Finished dragging stroke");
+        }
+        
+        // Clean up straight line path if it exists
+        if (straightLinePath) {
+            [straightLinePath release];
+            straightLinePath = nil;
         }
     }
     
@@ -498,6 +714,77 @@
     return YES;
 }
 
+// Handle key up events
+- (void)keyUp:(NSEvent *)event {
+    NSUInteger flags = [event modifierFlags];
+    NSString *characters = [event charactersIgnoringModifiers];
+    NSUInteger keyCode = [event keyCode];
+    
+    NSLog(@"DrawView: keyUp detected - keyCode: %lu, chars: '%@', flags: %lx", 
+          (unsigned long)keyCode, characters, (unsigned long)flags);
+    
+    // Check if the shift key was released
+    BOOL wasShiftKey = isShiftKeyDown && (flags & (1 << 17)) == 0; // NSShiftKeyMask in 10.9
+    
+    if (wasShiftKey) {
+        NSLog(@"DrawView: Shift key released in keyUp");
+        
+        // If we have an active straight line preview, we need to finalize it
+        if (straightLinePath) {
+            NSLog(@"DrawView: Finalizing straight line on shift release");
+            
+            // We need the current mouse position
+            NSPoint currentPoint = [NSEvent mouseLocation];
+            NSPoint viewPoint = [self convertScreenPointToView:currentPoint];
+            NSPoint smoothedPoint = [self smoothPoint:viewPoint];
+            
+            // Create a segment path for the straight line
+            NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
+            [segmentPath setLineCapStyle:NSRoundLineCapStyle];
+            [segmentPath setLineJoinStyle:NSRoundLineJoinStyle];
+            [segmentPath setLineWidth:straightLineWidth]; // Use the width from when shift was first pressed
+            
+            // Create the straight line segment
+            [segmentPath moveToPoint:straightLineStartPoint];
+            [segmentPath lineToPoint:smoothedPoint];
+            
+            // Add this segment to our collection
+            [paths addObject:segmentPath];
+            [pathColors addObject:[strokeColor copy]]; // Store current color with path
+            [segmentPath release];
+            
+            // Add a marker for the straight line stroke if needed
+            if ([strokeMarkers count] == 0 || 
+                [[strokeMarkers lastObject] integerValue] != [paths count] - 1) {
+                [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count] - 1]];
+            }
+            
+            // Clean up the preview path
+            [straightLinePath release];
+            straightLinePath = nil;
+            
+            // Continue normal drawing from this point
+            if (currentPath) {
+                [currentPath release];
+            }
+            
+            // Start a new path for continued drawing
+            currentPath = [[NSBezierPath bezierPath] retain];
+            [currentPath setLineWidth:lineWidth];
+            [currentPath setLineCapStyle:NSRoundLineCapStyle];
+            [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
+            [currentPath moveToPoint:smoothedPoint];
+            
+            // Make sure the view redraws
+            [self setNeedsDisplay:YES];
+        }
+        
+        isShiftKeyDown = NO;
+    }
+    
+    [super keyUp:event];
+}
+
 // Handle key down events for keyboard shortcuts
 - (void)keyDown:(NSEvent *)event {
     NSUInteger flags = [event modifierFlags];
@@ -515,6 +802,21 @@
     AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
     pid_t wacomDriverPID = [[appDelegate valueForKey:@"wacomDriverPID"] intValue];
     
+    // Check for shift key for straight line drawing
+    BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+    
+    // Check if shift key state has changed
+    if (isShiftDown != isShiftKeyDown) {
+        isShiftKeyDown = isShiftDown;
+        NSLog(@"DrawView: Shift key %@", isShiftKeyDown ? @"pressed" : @"released");
+        
+        // If shift was just released and we have an active straight line preview,
+        // we need to commit it or cancel it
+        if (!isShiftKeyDown && straightLinePath) {
+            [self setNeedsDisplay:YES];
+        }
+    }
+    
     // Only process keyboard events from the Wacom driver
     if (wacomDriverPID != 0 && eventSourcePID == wacomDriverPID) {
         NSLog(@"DrawView: Keyboard event from Wacom tablet detected");
@@ -522,13 +824,12 @@
         // Check for keyboard shortcuts
         // In OS X 10.9, we need to use the raw values instead of the constants
         BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
-        BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
         BOOL isD = ([characters isEqualToString:@"D"] || [characters isEqualToString:@"d"]);
         
         NSLog(@"DrawView: Key modifiers - Command: %d, Shift: %d, IsD: %d",
-              isCommandDown, isShiftDown, isD);
+              isCommandDown, isShiftKeyDown, isD);
         
-        if (isCommandDown && isD && !isShiftDown) {
+        if (isCommandDown && isD && !isShiftKeyDown) {
             NSLog(@"DrawView: Color toggle (Cmd+D) detected from Wacom, toggling color");
             [self toggleToNextColor];
         } else {
@@ -1142,6 +1443,9 @@
     [undoStrokeMarkers release];
     if (currentPath) {
         [currentPath release];
+    }
+    if (straightLinePath) {
+        [straightLinePath release];
     }
     [strokeColor release];
     [presetColors release];

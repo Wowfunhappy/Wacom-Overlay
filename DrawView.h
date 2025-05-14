@@ -29,6 +29,12 @@
     BOOL isDraggingStroke;
     NSPoint dragStartPoint;
     NSMutableArray *relatedStrokeIndices; // For tracking connected strokes (same color, intersecting)
+    
+    // Straight line drawing variables
+    BOOL isShiftKeyDown;
+    NSPoint straightLineStartPoint;
+    NSBezierPath *straightLinePath; // For preview during drag
+    CGFloat straightLineWidth; // To store the width at the time shift was pressed
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
