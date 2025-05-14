@@ -13,6 +13,7 @@
     if (overlayWindow != nil) {
         [self setupGlobalEventMonitors];
         [self setupCustomCursor];
+        [self registerForColorNotifications];
     }
 }
 
@@ -223,28 +224,26 @@
     // Store the default cursor for later use
     defaultCursor = [[NSCursor arrowCursor] retain];
     
-    // Load the menuIcon image for our custom cursor
-    NSString *menuIconPath = [[NSBundle mainBundle] pathForResource:@"menuIcon" ofType:@"png"];
-    if (menuIconPath) {
-        NSImage *menuImage = [[[NSImage alloc] initWithContentsOfFile:menuIconPath] autorelease];
-        
-        if (menuImage) {
-            // Create a cursor with the hotspot at the bottom left (tip of the pencil)
-            // Get the image size to properly set the bottom left position
-            NSSize imageSize = [menuImage size];
-            // NSCursor coordinates have (0,0) at the bottom left, going up to (width,height)
-            // Since our image is showing the hotspot is currently at top left,
-            // we need to flip it and set it at y = height - offset
-            customCursor = [[NSCursor alloc] initWithImage:menuImage hotSpot:NSMakePoint(0, imageSize.height - 1)];
-            NSLog(@"Custom pen cursor created successfully with hotspot at bottom left");
-        } else {
-            NSLog(@"Failed to load menuIcon.png for custom cursor");
-            customCursor = [defaultCursor retain];
+    // Get current stroke color from DrawView if possible
+    NSColor *initialColor = nil;
+    if (overlayWindow != nil) {
+        DrawView *drawView = (DrawView *)[overlayWindow contentView];
+        if ([drawView respondsToSelector:@selector(strokeColor)]) {
+            initialColor = [drawView strokeColor];
         }
-    } else {
-        NSLog(@"Failed to find menuIcon.png for custom cursor");
-        customCursor = [defaultCursor retain];
     }
+    
+    // Use the DrawView's color or fallback to red if not available
+    if (initialColor != nil) {
+        currentCursorColor = [initialColor retain];
+        NSLog(@"Using DrawView's current color for cursor: %@", initialColor);
+    } else {
+        currentCursorColor = [[NSColor redColor] retain];
+        NSLog(@"DrawView color not available, using red as default cursor color");
+    }
+    
+    // Create the initial custom cursor
+    customCursor = [self createCursorWithColor:currentCursorColor];
     
     // Enable setting cursor in background when app is not focused
     // This uses an undocumented system call to allow cursor setting when not in foreground
@@ -267,7 +266,7 @@
         
         // Every few seconds, reapply the CGS connection property
         static int counter = 0;
-        if (++counter % 20 == 0) { // Every ~2 seconds (20 * 0.1s = 2s)
+        if (++counter % 10 == 0) { // Every ~1 seconds (20 * 0.1s = 2s)
             void *connection = CGSDefaultConnectionForThread();
             if (connection) {
                 CFStringRef propertyString = CFSTR("SetsCursorInBackground");
@@ -278,7 +277,91 @@
     }
 }
 
+- (NSCursor *)createCursorWithColor:(NSColor *)color {
+    // Load the menuIcon image for our custom cursor
+    NSString *menuIconPath = [[NSBundle mainBundle] pathForResource:@"menuIcon" ofType:@"png"];
+    if (!menuIconPath) {
+        NSLog(@"Failed to find menuIcon.png for custom cursor");
+        return [[NSCursor arrowCursor] retain];
+    }
+    
+    NSImage *menuImage = [[[NSImage alloc] initWithContentsOfFile:menuIconPath] autorelease];
+    if (!menuImage) {
+        NSLog(@"Failed to load menuIcon.png for custom cursor");
+        return [[NSCursor arrowCursor] retain];
+    }
+    
+    // Create a copy of the image that we can modify with our color
+    NSSize imageSize = [menuImage size];
+    NSImage *coloredImage = [[NSImage alloc] initWithSize:imageSize];
+    
+    [coloredImage lockFocus];
+    
+    // Draw original image as template
+    [menuImage drawAtPoint:NSZeroPoint fromRect:NSZeroRect operation:NSCompositeCopy fraction:1.0];
+    
+    // Apply color
+    [color set];
+    NSRectFillUsingOperation(NSMakeRect(0, 0, imageSize.width, imageSize.height), NSCompositeSourceAtop);
+    
+    [coloredImage unlockFocus];
+    
+    // Create a cursor with the colored image
+    NSCursor *cursor = [[NSCursor alloc] initWithImage:coloredImage 
+                                              hotSpot:NSMakePoint(0, imageSize.height - 1)];
+    
+    [coloredImage release];
+    
+    NSLog(@"Created custom cursor with color: %@", color);
+    return cursor;
+}
+
+- (void)updateCursorWithColor:(NSColor *)color {
+    if (color == nil) {
+        return;
+    }
+    
+    // Store the new color
+    [currentCursorColor release];
+    currentCursorColor = [color retain];
+    
+    // Create a new cursor with the color
+    NSCursor *newCursor = [self createCursorWithColor:color];
+    
+    // Replace the old cursor
+    [customCursor release];
+    customCursor = newCursor;
+    
+    // If pen is in proximity, update the cursor immediately
+    if (isPenInProximity) {
+        [customCursor set];
+    }
+    
+    NSLog(@"Updated cursor with new color: %@", color);
+}
+
+- (void)registerForColorNotifications {
+    // Register for color change notifications from DrawView
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleColorChanged:)
+                                                 name:@"DrawViewColorChanged"
+                                               object:nil];
+    
+    NSLog(@"Registered for color change notifications");
+}
+
+- (void)handleColorChanged:(NSNotification *)notification {
+    // Extract the color from the notification
+    NSColor *newColor = [[notification userInfo] objectForKey:@"color"];
+    if (newColor) {
+        [self updateCursorWithColor:newColor];
+    }
+}
+
 - (void)dealloc {
+    // Unregister for notifications
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    
     // Invalidate and release the timer
     if (cursorCheckTimer != nil) {
         [cursorCheckTimer invalidate];
@@ -288,9 +371,10 @@
     // Clean up our global event monitors
     [self tearDownGlobalEventMonitors];
     
-    // Release our cursors
+    // Release our cursors and color
     [customCursor release];
     [defaultCursor release];
+    [currentCursorColor release];
     
     // Don't release overlayWindow - we don't own it
     [super dealloc];

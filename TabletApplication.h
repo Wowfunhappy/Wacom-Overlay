@@ -15,6 +15,7 @@ OSStatus CGSSetConnectionProperty(void *connection, void *ownerConnection, CFStr
     NSCursor *defaultCursor;
     BOOL isPenInProximity;
     NSTimer *cursorCheckTimer;
+    NSColor *currentCursorColor;
 }
 
 - (void)handleProximityEvent:(NSEvent *)theEvent;
@@ -25,5 +26,8 @@ OSStatus CGSSetConnectionProperty(void *connection, void *ownerConnection, CFStr
 - (void)tearDownGlobalEventMonitors;
 - (void)setupCustomCursor;
 - (void)enforceCursor:(NSTimer *)timer;
+- (void)updateCursorWithColor:(NSColor *)color;
+- (NSCursor *)createCursorWithColor:(NSColor *)color;
+- (void)registerForColorNotifications;
 
 @end

@@ -1381,7 +1381,19 @@
     
     // If the current color index is the one being changed, update the stroke color
     if (currentColorIndex == index) {
-        self.strokeColor = color;
+        // Update stroke color and trigger notification
+        if (strokeColor != color) {
+            [strokeColor release];
+            strokeColor = [color retain];
+            
+            // Post a notification about the color change so the cursor can be updated
+            NSDictionary *userInfo = [NSDictionary dictionaryWithObject:color forKey:@"color"];
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"DrawViewColorChanged" 
+                                                              object:self 
+                                                            userInfo:userInfo];
+            
+            NSLog(@"DrawView: Posted color change notification with color: %@", color);
+        }
         
         // Update the color well in the control panel
         NSArray *windows = [NSApp windows];
@@ -1407,7 +1419,21 @@
     currentColorIndex = (currentColorIndex + 1) % [presetColors count];
     
     // Set the new color
-    self.strokeColor = [presetColors objectAtIndex:currentColorIndex];
+    NSColor *newColor = [presetColors objectAtIndex:currentColorIndex];
+    
+    // Release old color and retain new one
+    if (strokeColor != newColor) {
+        [strokeColor release];
+        strokeColor = [newColor retain];
+        
+        // Post a notification about the color change so the cursor can be updated
+        NSDictionary *userInfo = [NSDictionary dictionaryWithObject:newColor forKey:@"color"];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"DrawViewColorChanged" 
+                                                          object:self 
+                                                        userInfo:userInfo];
+        
+        NSLog(@"DrawView: Posted color change notification with color: %@", newColor);
+    }
     
     // Also update the color well in the control panel if there is one
     NSArray *windows = [NSApp windows];
