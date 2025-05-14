@@ -228,6 +228,18 @@
         NSLog(@"Failed to find menuIcon.png for custom cursor");
         customCursor = [defaultCursor retain];
     }
+    
+    // Enable setting cursor in background when app is not focused
+    // This uses an undocumented system call to allow cursor setting when not in foreground
+    void *connection = CGSDefaultConnectionForThread();
+    if (connection) {
+        CFStringRef propertyString = CFSTR("SetsCursorInBackground");
+        CFBooleanRef boolVal = kCFBooleanTrue;
+        CGSSetConnectionProperty(connection, connection, propertyString, boolVal);
+        NSLog(@"Enabled SetsCursorInBackground for custom cursor visibility when app loses focus");
+    } else {
+        NSLog(@"Warning: Could not get CGS connection for setting cursor in background");
+    }
 }
 
 - (void)dealloc {

@@ -1,4 +1,9 @@
 #import <Cocoa/Cocoa.h>
+
+// External CoreGraphics Services declarations for cursor background control
+void *CGSDefaultConnectionForThread(void);
+OSStatus CGSSetConnectionProperty(void *connection, void *ownerConnection, CFStringRef key, CFTypeRef value);
+
 @class OverlayWindow;
 
 @interface TabletApplication : NSApplication {
