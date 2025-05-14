@@ -256,7 +256,7 @@
             NSLog(@"DrawView: Starting in straight line mode (shift already down)");
             
             // Set the initial straight line width based on current pressure
-            if ([event pressure] > 0.0) {
+            if ([event pressure] > 5.0) {
                 // Capture the pressure-sensitive width at this moment
                 straightLineWidth = lineWidth * ([event pressure] * 2.0);
                 straightLineWidth = MAX(0.5, straightLineWidth);
