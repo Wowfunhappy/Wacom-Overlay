@@ -173,7 +173,8 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                     
                     // If pen is in proximity, immediately restore default cursor
                     TabletApplication *app = (TabletApplication *)NSApp;
-                    BOOL isPenInProximity = [app valueForKey:@"isPenInProximity"];
+                    id proximityValue = [app valueForKey:@"isPenInProximity"];
+                    BOOL isPenInProximity = [proximityValue boolValue];
                     if (isPenInProximity) {
                         // Get default cursor and set it
                         NSCursor *defaultCursor = [app valueForKey:@"defaultCursor"];
@@ -268,7 +269,8 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                 
                 // If pen is in proximity, restore custom cursor
                 TabletApplication *app = (TabletApplication *)NSApp;
-                BOOL isPenInProximity = [app valueForKey:@"isPenInProximity"];
+                id proximityValue = [app valueForKey:@"isPenInProximity"];
+                BOOL isPenInProximity = [proximityValue boolValue];
                 if (isPenInProximity) {
                     // Get custom cursor and set it
                     NSCursor *customCursor = [app valueForKey:@"customCursor"];
@@ -493,7 +495,22 @@ NSMenu *colorMenu = nil;
         NSArray *presetColors = [self.drawView presetColors];
         if (colorIndex < [presetColors count]) {
             NSColor *newColor = [presetColors objectAtIndex:colorIndex];
-            [self.drawView setStrokeColor:newColor];
+            
+            // Instead of using setStrokeColor accessor, we'll modify the property directly
+            // and post the notification ourselves to ensure it's triggered
+            DrawView *dv = self.drawView;
+            if ([dv strokeColor] != newColor) {
+                [[dv strokeColor] release];
+                [dv setValue:[newColor retain] forKey:@"strokeColor"];
+                
+                // Post a color change notification for the cursor
+                NSDictionary *userInfo = [NSDictionary dictionaryWithObject:newColor forKey:@"color"];
+                [[NSNotificationCenter defaultCenter] postNotificationName:@"DrawViewColorChanged"
+                                                                  object:dv
+                                                                userInfo:userInfo];
+                
+                NSLog(@"AppDelegate: Posted color change notification for menu bar color change with color: %@", newColor);
+            }
             
             // Update color well in control panel if it's open
             if (self.controlPanel) {
