@@ -243,9 +243,16 @@
         NSPoint screenPoint = [NSEvent mouseLocation];
         viewPoint = [self convertScreenPointToView:screenPoint];
         
-        // If we're in eraser mode, erase stroke at this point instead of drawing
+        // If we're in eraser mode, erase stroke or text at this point instead of drawing
         if (mErasing) {
-            [self eraseStrokeAtPoint:viewPoint];
+            // First try to erase text at this point
+            NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
+            if (textIndex >= 0) {
+                [self eraseTextAtPoint:viewPoint];
+            } else {
+                // If no text found, try to erase stroke
+                [self eraseStrokeAtPoint:viewPoint];
+            }
             return;
         }
         
@@ -415,7 +422,14 @@
                 
                 // Only process erase if we've moved enough distance (to avoid rapid erasures)
                 if (distance > 10.0) {
-                    [self eraseStrokeAtPoint:viewPoint];
+                    // First try to erase text at this point
+                    NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
+                    if (textIndex >= 0) {
+                        [self eraseTextAtPoint:viewPoint];
+                    } else {
+                        // If no text found, try to erase stroke
+                        [self eraseStrokeAtPoint:viewPoint];
+                    }
                     lastErasePoint = viewPoint;
                 }
             }
@@ -1114,6 +1128,39 @@
         NSLog(@"DrawView: Erased stroke with %ld segments", (long)segmentCount);
     } else {
         NSLog(@"DrawView: No stroke found at point to erase");
+    }
+}
+
+// Erase text annotation at the given point
+- (void)eraseTextAtPoint:(NSPoint)point {
+    NSInteger textIndex = [self findTextAnnotationAtPoint:point];
+    
+    if (textIndex >= 0 && textIndex < [textAnnotations count]) {
+        // Save to undo stack
+        NSMutableDictionary *textToUndo = [[textAnnotations objectAtIndex:textIndex] retain];
+        NSColor *colorToUndo = [[textColors objectAtIndex:textIndex] retain];
+        
+        [undoTextAnnotations addObject:textToUndo];
+        [undoTextColors addObject:colorToUndo];
+        
+        [textToUndo release];
+        [colorToUndo release];
+        
+        // Remove the text annotation
+        [textAnnotations removeObjectAtIndex:textIndex];
+        [textColors removeObjectAtIndex:textIndex];
+        
+        // Clear selected text if it was erased
+        if (selectedTextIndex == textIndex) {
+            selectedTextIndex = -1;
+        } else if (selectedTextIndex > textIndex) {
+            selectedTextIndex--;
+        }
+        
+        // Redraw
+        [self setNeedsDisplay:YES];
+        
+        NSLog(@"DrawView: Erased text annotation at index %ld", (long)textIndex);
     }
 }
 

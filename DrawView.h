@@ -69,6 +69,7 @@
 - (BOOL)canRedo;
 - (void)handleProximity:(NSNotification *)proxNotice;
 - (void)eraseStrokeAtPoint:(NSPoint)point;
+- (void)eraseTextAtPoint:(NSPoint)point;
 - (void)resetEraseTracking;
 - (void)toggleToNextColor;
 - (void)setPresetColorAtIndex:(NSInteger)index toColor:(NSColor *)color;
