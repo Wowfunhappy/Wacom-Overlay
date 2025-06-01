@@ -59,6 +59,7 @@
 @property (nonatomic, assign) NSInteger currentColorIndex;
 @property (nonatomic, assign) NSInteger smoothingLevel;
 @property (nonatomic, assign) BOOL enableSmoothing;
+@property (nonatomic, assign) NSInteger backgroundMode; // 0=Clear, 1=White, 2=Black
 
 - (void)clear;
 - (void)mouseEvent:(NSEvent *)event;

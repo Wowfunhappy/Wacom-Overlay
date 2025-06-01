@@ -26,5 +26,8 @@
 - (void)setupStatusBarMenu;
 - (void)openControls:(id)sender;
 - (void)clearDrawing:(id)sender;
+- (void)setCanvasWhite:(id)sender;
+- (void)setCanvasBlack:(id)sender;
+- (void)setCanvasClear:(id)sender;
 
 @end

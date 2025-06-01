@@ -429,7 +429,38 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     [clearItem setTarget:self];
     [menu addItem:clearItem];
     
-    // 2. Change Color submenu
+    // 2. Canvas submenu
+    NSMenuItem *canvasItem = [[[NSMenuItem alloc] initWithTitle:@"Canvas" 
+                                                       action:nil 
+                                                keyEquivalent:@""] autorelease];
+    NSMenu *canvasMenu = [[[NSMenu alloc] init] autorelease];
+    [canvasItem setSubmenu:canvasMenu];
+    [menu addItem:canvasItem];
+    
+    // Canvas menu items
+    NSMenuItem *clearCanvasItem = [[[NSMenuItem alloc] initWithTitle:@"Clear" 
+                                                              action:@selector(setCanvasClear:) 
+                                                       keyEquivalent:@""] autorelease];
+    [clearCanvasItem setTarget:self];
+    [clearCanvasItem setState:NSOnState]; // Default checked
+    [clearCanvasItem setTag:0];
+    [canvasMenu addItem:clearCanvasItem];
+    
+    NSMenuItem *whiteCanvasItem = [[[NSMenuItem alloc] initWithTitle:@"White" 
+                                                              action:@selector(setCanvasWhite:) 
+                                                       keyEquivalent:@""] autorelease];
+    [whiteCanvasItem setTarget:self];
+    [whiteCanvasItem setTag:1];
+    [canvasMenu addItem:whiteCanvasItem];
+    
+    NSMenuItem *blackCanvasItem = [[[NSMenuItem alloc] initWithTitle:@"Black" 
+                                                              action:@selector(setCanvasBlack:) 
+                                                       keyEquivalent:@""] autorelease];
+    [blackCanvasItem setTarget:self];
+    [blackCanvasItem setTag:2];
+    [canvasMenu addItem:blackCanvasItem];
+    
+    // 3. Change Color submenu
     NSMenuItem *colorItem = [[[NSMenuItem alloc] initWithTitle:@"Change Color" 
                                                       action:nil 
                                                keyEquivalent:@""] autorelease];
@@ -440,7 +471,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     // Will populate color menu dynamically when shown
     [colorMenu setDelegate:(id<NSMenuDelegate>)self];
     
-    // 3. Open Controls...
+    // 4. Open Controls...
     NSMenuItem *controlsItem = [[[NSMenuItem alloc] initWithTitle:@"Open Controls..." 
                                                          action:@selector(openControls:) 
                                                   keyEquivalent:@""] autorelease];
@@ -450,7 +481,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     // Add separator
     [menu addItem:[NSMenuItem separatorItem]];
     
-    // 4. Quit
+    // 5. Quit
     NSMenuItem *quitItem = [[[NSMenuItem alloc] initWithTitle:@"Quit" 
                                                     action:@selector(terminate:) 
                                              keyEquivalent:@"q"] autorelease];
@@ -756,6 +787,33 @@ NSMenu *colorMenu = nil;
     [statusItem release];
     [colorMenu release];
     [super dealloc];
+}
+
+// Canvas menu actions
+- (void)setCanvasClear:(id)sender {
+    [self updateCanvasMode:0 fromMenuItem:sender];
+}
+
+- (void)setCanvasWhite:(id)sender {
+    [self updateCanvasMode:1 fromMenuItem:sender];
+}
+
+- (void)setCanvasBlack:(id)sender {
+    [self updateCanvasMode:2 fromMenuItem:sender];
+}
+
+- (void)updateCanvasMode:(NSInteger)mode fromMenuItem:(NSMenuItem *)menuItem {
+    // Update check marks
+    NSMenu *canvasMenu = [menuItem menu];
+    for (NSMenuItem *item in [canvasMenu itemArray]) {
+        [item setState:(item.tag == mode) ? NSOnState : NSOffState];
+    }
+    
+    // Update the draw view
+    if (self.drawView) {
+        self.drawView.backgroundMode = mode;
+        [self.drawView setNeedsDisplay:YES];
+    }
 }
 
 @end

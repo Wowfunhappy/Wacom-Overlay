@@ -9,6 +9,8 @@
 @synthesize currentColorIndex;
 @synthesize smoothingLevel;
 @synthesize enableSmoothing;
+@synthesize backgroundMode;
+@synthesize textSize;
 @dynamic presetColors;
 
 // Custom setter for strokeColor to ensure cursor color updates
@@ -61,6 +63,9 @@
         self.smoothingLevel = 20;  // Maximum smoothing level for neatest handwriting
         self.enableSmoothing = YES;  // Always enabled
         
+        // Initialize background mode to clear
+        self.backgroundMode = 0;  // 0=Clear, 1=White, 2=Black
+        
         // Initialize stroke selection and dragging variables
         selectedStrokeIndex = -1;
         isStrokeSelected = NO;
@@ -97,9 +102,22 @@
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
-    // Clear the background (transparent)
-    [[NSColor clearColor] set];
-    NSRectFill(dirtyRect);
+    // Draw background based on mode
+    switch (self.backgroundMode) {
+        case 1: // White background
+            [[NSColor colorWithCalibratedWhite:0.95 alpha:1.0] set]; // Slightly off-white
+            NSRectFill(dirtyRect);
+            break;
+        case 2: // Black background
+            [[NSColor colorWithCalibratedWhite:0.05 alpha:1.0] set]; // Near-black
+            NSRectFill(dirtyRect);
+            break;
+        case 0: // Clear (default)
+        default:
+            [[NSColor clearColor] set];
+            NSRectFill(dirtyRect);
+            break;
+    }
     
     // Draw all saved paths with their colors
     for (NSUInteger i = 0; i < [paths count]; i++) {
