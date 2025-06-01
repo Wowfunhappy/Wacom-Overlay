@@ -308,12 +308,7 @@
         // For regular mouse events, use the event's locationInWindow coordinates
         viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
         
-        // If in text input mode, start text input at this point
-        if (isTextInputMode) {
-            NSLog(@"Mouse clicked in text input mode at point: %@", NSStringFromPoint(viewPoint));
-            [self startTextInputAtPoint:viewPoint];
-            return;
-        }
+        // No longer handle text input mode via mouse clicks - only via keyboard shortcut
         
         // Check for text annotations first
         NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
@@ -2039,27 +2034,23 @@
 #pragma mark - Text Annotation Methods
 
 - (void)enterTextInputMode {
-    if (isTextInputMode || isEditingText) {
-        // Toggle off if already in text mode or editing
-        [self exitTextInputMode];
-    } else {
-        isTextInputMode = YES;
-        NSLog(@"Entered text input mode");
-        
-        // Change cursor to indicate text mode
-        [[NSCursor IBeamCursor] set];
-        
-        // Start text input immediately at current mouse position
-        NSPoint mouseLocation = [NSEvent mouseLocation];
-        NSPoint viewPoint = [self convertScreenPointToView:mouseLocation];
-        [self startTextInputAtPoint:viewPoint];
+    // If already editing, finish the current text first
+    if (isEditingText) {
+        [self finishTextInput];
     }
+    
+    NSLog(@"Creating text input at cursor position");
+    
+    // Start text input immediately at current mouse position
+    NSPoint mouseLocation = [NSEvent mouseLocation];
+    NSPoint viewPoint = [self convertScreenPointToView:mouseLocation];
+    [self startTextInputAtPoint:viewPoint];
 }
 
 - (void)exitTextInputMode {
-    isTextInputMode = NO;
+    // This method is mainly for cleanup if text input needs to be cancelled
     if (isEditingText) {
-        [self cancelTextInput];  // Use cancel instead of finish to avoid double-exit
+        [self cancelTextInput];
     }
     NSLog(@"Exited text input mode");
     
@@ -2071,8 +2062,6 @@
 }
 
 - (void)startTextInputAtPoint:(NSPoint)point {
-    if (!isTextInputMode) return;
-    
     // If already editing, finish the current text first
     if (isEditingText) {
         [self finishTextInput];
@@ -2132,8 +2121,8 @@
     // Temporarily allow the window to accept events for text input
     [[self window] setIgnoresMouseEvents:NO];
     
-    // Make the window key and order front to accept keyboard input
-    [[self window] makeKeyAndOrderFront:nil];
+    // Make the window key to accept keyboard input (but don't order front to avoid focus disruption)
+    [[self window] makeKeyWindow];
     
     // Use performSelector to delay setting first responder to avoid the exception
     [self performSelector:@selector(focusTextView) withObject:nil afterDelay:0.1];
@@ -2142,8 +2131,15 @@
 }
 
 - (void)focusTextView {
-    if (activeTextView && [[self window] isKeyWindow]) {
-        [[self window] makeFirstResponder:activeTextView];
+    if (activeTextView) {
+        // Ensure window is key and then set first responder
+        [[self window] makeKeyWindow];
+        BOOL success = [[self window] makeFirstResponder:activeTextView];
+        if (success) {
+            NSLog(@"Text view focused successfully");
+        } else {
+            NSLog(@"Failed to focus text view");
+        }
     }
 }
 
@@ -2177,9 +2173,11 @@
     activeTextView = nil;
     isEditingText = NO;
     
-    // Don't exit text input mode - allow multiple text entries
-    // Just restore the window state for next input
+    // Completely exit text mode and restore normal operation
     [[self window] setIgnoresMouseEvents:YES];
+    [[NSCursor arrowCursor] set];
+    
+    NSLog(@"Text input completed, returned to normal mode");
     
     // Redraw to show the new text
     [self setNeedsDisplay:YES];
@@ -2194,8 +2192,9 @@
     activeTextView = nil;
     isEditingText = NO;
     
-    // Restore window to ignore mouse events
+    // Restore window to ignore mouse events and normal cursor
     [[self window] setIgnoresMouseEvents:YES];
+    [[NSCursor arrowCursor] set];
     
     NSLog(@"Cancelled text input");
 }
