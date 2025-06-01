@@ -4,7 +4,7 @@
 @implementation ControlPanel
 
 - (id)initWithDrawView:(DrawView *)aDrawView {
-    NSRect frame = NSMakeRect(0, 0, 300, 210);  // Increased height for text size control
+    NSRect frame = NSMakeRect(0, 0, 300, 210);  // Compact layout with left-aligned color wells
     self = [super initWithContentRect:frame
                             styleMask:1 | 2 // NSTitledWindowMask | NSClosableWindowMask
                               backing:NSBackingStoreBuffered
@@ -88,33 +88,47 @@
         NSArray *presetColors = [drawView presetColors];
         
         // Create color wells for each preset
-        preset1ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(60, 50, 44, 23)];
+        preset1ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(20, 50, 44, 23)];
         [preset1ColorWell setColor:[presetColors objectAtIndex:0]];
         [preset1ColorWell setTarget:self];
         [preset1ColorWell setAction:@selector(presetColorChanged:)];
         [preset1ColorWell setTag:0]; // Use tag to store the preset index
         [contentView addSubview:preset1ColorWell];
         
-        preset2ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(130, 50, 44, 23)];
+        preset2ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(70, 50, 44, 23)];
         [preset2ColorWell setColor:[presetColors objectAtIndex:1]];
         [preset2ColorWell setTarget:self];
         [preset2ColorWell setAction:@selector(presetColorChanged:)];
         [preset2ColorWell setTag:1]; // Use tag to store the preset index
         [contentView addSubview:preset2ColorWell];
         
-        preset3ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(200, 50, 44, 23)];
+        preset3ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(120, 50, 44, 23)];
         [preset3ColorWell setColor:[presetColors objectAtIndex:2]];
         [preset3ColorWell setTarget:self];
         [preset3ColorWell setAction:@selector(presetColorChanged:)];
         [preset3ColorWell setTag:2]; // Use tag to store the preset index
         [contentView addSubview:preset3ColorWell];
         
+        preset4ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(170, 50, 44, 23)];
+        [preset4ColorWell setColor:[presetColors objectAtIndex:3]];
+        [preset4ColorWell setTarget:self];
+        [preset4ColorWell setAction:@selector(presetColorChanged:)];
+        [preset4ColorWell setTag:3]; // Use tag to store the preset index
+        [contentView addSubview:preset4ColorWell];
+        
+        preset5ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(220, 50, 44, 23)];
+        [preset5ColorWell setColor:[presetColors objectAtIndex:4]];
+        [preset5ColorWell setTarget:self];
+        [preset5ColorWell setAction:@selector(presetColorChanged:)];
+        [preset5ColorWell setTag:4]; // Use tag to store the preset index
+        [contentView addSubview:preset5ColorWell];
+        
         // Store the color wells in an array for easier access
         presetColorWells = [[NSArray alloc] initWithObjects:
-                            preset1ColorWell, preset2ColorWell, preset3ColorWell, nil];
+                            preset1ColorWell, preset2ColorWell, preset3ColorWell, preset4ColorWell, preset5ColorWell, nil];
         
         // Add preset labels
-        NSTextField *preset1Label = [[NSTextField alloc] initWithFrame:NSMakeRect(60, 30, 44, 17)];
+        NSTextField *preset1Label = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 30, 44, 17)];
         [preset1Label setStringValue:@"1"];
         [preset1Label setBezeled:NO];
         [preset1Label setDrawsBackground:NO];
@@ -124,7 +138,7 @@
         [contentView addSubview:preset1Label];
         [preset1Label release];
         
-        NSTextField *preset2Label = [[NSTextField alloc] initWithFrame:NSMakeRect(130, 30, 44, 17)];
+        NSTextField *preset2Label = [[NSTextField alloc] initWithFrame:NSMakeRect(70, 30, 44, 17)];
         [preset2Label setStringValue:@"2"];
         [preset2Label setBezeled:NO];
         [preset2Label setDrawsBackground:NO];
@@ -134,7 +148,7 @@
         [contentView addSubview:preset2Label];
         [preset2Label release];
         
-        NSTextField *preset3Label = [[NSTextField alloc] initWithFrame:NSMakeRect(200, 30, 44, 17)];
+        NSTextField *preset3Label = [[NSTextField alloc] initWithFrame:NSMakeRect(120, 30, 44, 17)];
         [preset3Label setStringValue:@"3"];
         [preset3Label setBezeled:NO];
         [preset3Label setDrawsBackground:NO];
@@ -143,6 +157,26 @@
         [preset3Label setAlignment:NSCenterTextAlignment];
         [contentView addSubview:preset3Label];
         [preset3Label release];
+        
+        NSTextField *preset4Label = [[NSTextField alloc] initWithFrame:NSMakeRect(170, 30, 44, 17)];
+        [preset4Label setStringValue:@"4"];
+        [preset4Label setBezeled:NO];
+        [preset4Label setDrawsBackground:NO];
+        [preset4Label setEditable:NO];
+        [preset4Label setSelectable:NO];
+        [preset4Label setAlignment:NSCenterTextAlignment];
+        [contentView addSubview:preset4Label];
+        [preset4Label release];
+        
+        NSTextField *preset5Label = [[NSTextField alloc] initWithFrame:NSMakeRect(220, 30, 44, 17)];
+        [preset5Label setStringValue:@"5"];
+        [preset5Label setBezeled:NO];
+        [preset5Label setDrawsBackground:NO];
+        [preset5Label setEditable:NO];
+        [preset5Label setSelectable:NO];
+        [preset5Label setAlignment:NSCenterTextAlignment];
+        [contentView addSubview:preset5Label];
+        [preset5Label release];
         
         // Quit button no longer needed as it's in the menu bar now
         

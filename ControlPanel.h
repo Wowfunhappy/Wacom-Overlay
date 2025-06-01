@@ -11,6 +11,8 @@
     NSColorWell *preset1ColorWell;
     NSColorWell *preset2ColorWell;
     NSColorWell *preset3ColorWell;
+    NSColorWell *preset4ColorWell;
+    NSColorWell *preset5ColorWell;
     NSArray *presetColorWells;
 }
 

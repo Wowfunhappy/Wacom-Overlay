@@ -2075,12 +2075,16 @@
     NSData *colorData1 = [defaults objectForKey:@"PresetColor1"];
     NSData *colorData2 = [defaults objectForKey:@"PresetColor2"];
     NSData *colorData3 = [defaults objectForKey:@"PresetColor3"];
+    NSData *colorData4 = [defaults objectForKey:@"PresetColor4"];
+    NSData *colorData5 = [defaults objectForKey:@"PresetColor5"];
     NSInteger savedColorIndex = [defaults integerForKey:@"CurrentColorIndex"];
     
     // Default colors in case user defaults are not available
     NSColor *color1 = [NSColor redColor];
     NSColor *color2 = [NSColor blueColor];
     NSColor *color3 = [NSColor greenColor];
+    NSColor *color4 = [NSColor orangeColor];
+    NSColor *color5 = [NSColor purpleColor];
     
     // If we have stored colors, unarchive them
     if (colorData1) {
@@ -2104,8 +2108,22 @@
         }
     }
     
+    if (colorData4) {
+        NSColor *loadedColor = [NSUnarchiver unarchiveObjectWithData:colorData4];
+        if (loadedColor) {
+            color4 = loadedColor;
+        }
+    }
+    
+    if (colorData5) {
+        NSColor *loadedColor = [NSUnarchiver unarchiveObjectWithData:colorData5];
+        if (loadedColor) {
+            color5 = loadedColor;
+        }
+    }
+    
     // Initialize preset colors with loaded values
-    presetColors = [[NSArray alloc] initWithObjects:color1, color2, color3, nil];
+    presetColors = [[NSArray alloc] initWithObjects:color1, color2, color3, color4, color5, nil];
     
     // Set current color index (default to 0 if out of range)
     if (savedColorIndex >= 0 && savedColorIndex < [presetColors count]) {
@@ -2124,15 +2142,19 @@
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     
     // Archive the colors
-    if ([presetColors count] >= 3) {
+    if ([presetColors count] >= 5) {
         NSData *colorData1 = [NSArchiver archivedDataWithRootObject:[presetColors objectAtIndex:0]];
         NSData *colorData2 = [NSArchiver archivedDataWithRootObject:[presetColors objectAtIndex:1]];
         NSData *colorData3 = [NSArchiver archivedDataWithRootObject:[presetColors objectAtIndex:2]];
+        NSData *colorData4 = [NSArchiver archivedDataWithRootObject:[presetColors objectAtIndex:3]];
+        NSData *colorData5 = [NSArchiver archivedDataWithRootObject:[presetColors objectAtIndex:4]];
         
         // Save to user defaults
         [defaults setObject:colorData1 forKey:@"PresetColor1"];
         [defaults setObject:colorData2 forKey:@"PresetColor2"];
         [defaults setObject:colorData3 forKey:@"PresetColor3"];
+        [defaults setObject:colorData4 forKey:@"PresetColor4"];
+        [defaults setObject:colorData5 forKey:@"PresetColor5"];
         [defaults setInteger:currentColorIndex forKey:@"CurrentColorIndex"];
         
         // Synchronize to ensure the data is saved
