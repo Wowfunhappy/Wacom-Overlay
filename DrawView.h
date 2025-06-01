@@ -48,6 +48,7 @@
     NSInteger selectedTextIndex;
     NSPoint textInputPosition;
     NSInteger originalWindowLevel;
+    CGFloat textSize;
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;

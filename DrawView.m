@@ -6,7 +6,6 @@
 
 @synthesize strokeColor;
 @synthesize lineWidth;
-@synthesize textSize;
 @synthesize erasing = mErasing;
 @synthesize currentColorIndex;
 @synthesize smoothingLevel;
@@ -28,7 +27,15 @@
         [self loadColorsFromUserDefaults];
         
         self.lineWidth = 2.0;
-        self.textSize = 16.0;  // Default text size
+        
+        // Load text size from user defaults or use default
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        CGFloat savedTextSize = [defaults floatForKey:@"WacomOverlayTextSize"];
+        if (savedTextSize > 0) {
+            textSize = savedTextSize;
+        } else {
+            textSize = 16.0;  // Default text size
+        }
         mErasing = NO;
         hasLastErasePoint = NO;
         lastErasePoint = NSZeroPoint;
@@ -2297,6 +2304,21 @@
             [self cancelTextInput];
         }
     }
+}
+
+#pragma mark - Property Methods
+
+- (CGFloat)textSize {
+    return textSize;
+}
+
+- (void)setTextSize:(CGFloat)newTextSize {
+    textSize = newTextSize;
+    
+    // Save to user defaults
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setFloat:textSize forKey:@"WacomOverlayTextSize"];
+    [defaults synchronize];
 }
 
 @end
