@@ -37,11 +37,14 @@
     // Use legacy constants for OS X 10.9
     NSEventMask mouseEventMask = (1 << 1) |  // NSLeftMouseDown
                                  (1 << 6) |  // NSLeftMouseDragged 
-                                 (1 << 2);   // NSLeftMouseUp
+                                 (1 << 2) |  // NSLeftMouseUp
+                                 (1 << 5);   // NSMouseMoved
     
     globalTabletEventMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:mouseEventMask
                                                  handler:^(NSEvent *event) {
-        // Only handle tablet events, not regular mouse events
+        NSInteger eventType = [event type];
+        
+        // Handle tablet events for drawing
         // Note: isTabletPointerEvent will return false when F14 is pressed due to our override
         if ([event isTabletPointerEvent]) {
             NSLog(@"TabletApplication: Global event monitor caught tablet event");
@@ -52,6 +55,16 @@
                 
                 // Forward events to draw view, which will handle the erasing based on the erasing state
                 // We need to forward both regular and eraser events to maintain proper state
+                [drawView mouseEvent:event];
+            }
+        }
+        // Handle mouse moved events for cursor changes (even if not tablet events)
+        else if (eventType == 5) { // NSMouseMoved
+            // Get draw view from our overlay window
+            if (overlayWindow != nil) {
+                DrawView *drawView = (DrawView *)[overlayWindow contentView];
+                
+                // Forward mouse moved events for cursor management
                 [drawView mouseEvent:event];
             }
         }

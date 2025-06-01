@@ -185,6 +185,10 @@
             [self mouseUp:event];
             break;
             
+        case 5: // NSMouseMoved
+            [self mouseMoved:event];
+            break;
+            
         case 24: // NSTabletProximity
             // If we receive a proximity event, it should have already been handled by TabletApplication
             // but we can explicitly update our erasing status here if needed
@@ -697,6 +701,50 @@
     }
     
     [self setNeedsDisplay:YES];
+}
+
+- (void)mouseMoved:(NSEvent *)event {
+    // Skip cursor updates if we're currently dragging something
+    if (isDraggingStroke || isEditingText) {
+        return;
+    }
+    
+    // Get the current mouse position
+    NSPoint screenPoint = [NSEvent mouseLocation];
+    NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
+    
+    // Check if pen is in proximity - pen cursor takes precedence
+    if ([event isTabletPointerEvent] || mErasing) {
+        // Let the system handle pen cursors
+        return;
+    }
+    
+    // Check if we're over a stroke that can be dragged
+    NSInteger strokeIndex = [self findStrokeAtPointForSelection:viewPoint];
+    
+    // Also check if we're over a text annotation that can be dragged
+    NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
+    
+    if (strokeIndex >= 0 || textIndex >= 0) {
+        // Set hand cursor using a method that works even when not frontmost
+        NSCursor *handCursor = [NSCursor openHandCursor];
+        [handCursor set];
+        
+        // Use private API to force cursor update globally
+        // This selector may exist to update cursor even when app isn't frontmost
+        if ([NSCursor respondsToSelector:@selector(setHiddenUntilMouseMoves:)]) {
+            [NSCursor setHiddenUntilMouseMoves:NO];
+        }
+    } else {
+        // Reset to arrow cursor
+        NSCursor *arrowCursor = [NSCursor arrowCursor];
+        [arrowCursor set];
+        
+        // Use private API to force cursor update globally
+        if ([NSCursor respondsToSelector:@selector(setHiddenUntilMouseMoves:)]) {
+            [NSCursor setHiddenUntilMouseMoves:NO];
+        }
+    }
 }
 
 - (void)clear {

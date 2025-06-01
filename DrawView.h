@@ -62,6 +62,7 @@
 
 - (void)clear;
 - (void)mouseEvent:(NSEvent *)event;
+- (void)mouseMoved:(NSEvent *)event;
 - (NSPoint)convertScreenPointToView:(NSPoint)screenPoint;
 - (void)undo;
 - (void)redo;
