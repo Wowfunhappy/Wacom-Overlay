@@ -4,13 +4,29 @@
 
 @implementation DrawView
 
-@synthesize strokeColor;
 @synthesize lineWidth;
 @synthesize erasing = mErasing;
 @synthesize currentColorIndex;
 @synthesize smoothingLevel;
 @synthesize enableSmoothing;
 @dynamic presetColors;
+
+// Custom setter for strokeColor to ensure cursor color updates
+- (void)setStrokeColor:(NSColor *)color {
+    if (strokeColor != color) {
+        [strokeColor release];
+        strokeColor = [color retain];
+        
+        // Only post notification if color is not nil (to avoid issues during initialization)
+        if (color) {
+            // Post a notification about the color change so the cursor can be updated
+            NSDictionary *userInfo = [NSDictionary dictionaryWithObject:color forKey:@"color"];
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"DrawViewColorChanged" 
+                                                              object:self 
+                                                            userInfo:userInfo];
+        }
+    }
+}
 
 - (id)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];

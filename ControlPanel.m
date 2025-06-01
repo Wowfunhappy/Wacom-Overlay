@@ -33,7 +33,12 @@
         
         // Create Color well
         colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(100, 190, 44, 23)];
-        [colorWell setColor:[drawView strokeColor]];
+        NSColor *currentStrokeColor = [drawView strokeColor];
+        if (currentStrokeColor) {
+            [colorWell setColor:currentStrokeColor];
+        } else {
+            [colorWell setColor:[NSColor blackColor]]; // Fallback to black if nil
+        }
         [colorWell setTarget:self];
         [colorWell setAction:@selector(colorChanged:)];
         [contentView addSubview:colorWell];
@@ -89,35 +94,40 @@
         
         // Create color wells for each preset
         preset1ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(20, 75, 44, 23)];
-        [preset1ColorWell setColor:[presetColors objectAtIndex:0]];
+        NSColor *preset1Color = (presetColors && [presetColors count] > 0) ? [presetColors objectAtIndex:0] : [NSColor redColor];
+        [preset1ColorWell setColor:preset1Color];
         [preset1ColorWell setTarget:self];
         [preset1ColorWell setAction:@selector(presetColorChanged:)];
         [preset1ColorWell setTag:0]; // Use tag to store the preset index
         [contentView addSubview:preset1ColorWell];
         
         preset2ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(70, 75, 44, 23)];
-        [preset2ColorWell setColor:[presetColors objectAtIndex:1]];
+        NSColor *preset2Color = (presetColors && [presetColors count] > 1) ? [presetColors objectAtIndex:1] : [NSColor blueColor];
+        [preset2ColorWell setColor:preset2Color];
         [preset2ColorWell setTarget:self];
         [preset2ColorWell setAction:@selector(presetColorChanged:)];
         [preset2ColorWell setTag:1]; // Use tag to store the preset index
         [contentView addSubview:preset2ColorWell];
         
         preset3ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(120, 75, 44, 23)];
-        [preset3ColorWell setColor:[presetColors objectAtIndex:2]];
+        NSColor *preset3Color = (presetColors && [presetColors count] > 2) ? [presetColors objectAtIndex:2] : [NSColor greenColor];
+        [preset3ColorWell setColor:preset3Color];
         [preset3ColorWell setTarget:self];
         [preset3ColorWell setAction:@selector(presetColorChanged:)];
         [preset3ColorWell setTag:2]; // Use tag to store the preset index
         [contentView addSubview:preset3ColorWell];
         
         preset4ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(170, 75, 44, 23)];
-        [preset4ColorWell setColor:[presetColors objectAtIndex:3]];
+        NSColor *preset4Color = (presetColors && [presetColors count] > 3) ? [presetColors objectAtIndex:3] : [NSColor orangeColor];
+        [preset4ColorWell setColor:preset4Color];
         [preset4ColorWell setTarget:self];
         [preset4ColorWell setAction:@selector(presetColorChanged:)];
         [preset4ColorWell setTag:3]; // Use tag to store the preset index
         [contentView addSubview:preset4ColorWell];
         
         preset5ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(220, 75, 44, 23)];
-        [preset5ColorWell setColor:[presetColors objectAtIndex:4]];
+        NSColor *preset5Color = (presetColors && [presetColors count] > 4) ? [presetColors objectAtIndex:4] : [NSColor purpleColor];
+        [preset5ColorWell setColor:preset5Color];
         [preset5ColorWell setTarget:self];
         [preset5ColorWell setAction:@selector(presetColorChanged:)];
         [preset5ColorWell setTag:4]; // Use tag to store the preset index
@@ -284,15 +294,34 @@
     [drawView resetToDefaults];
     
     // Update UI controls to reflect the reset values
-    [colorWell setColor:[drawView strokeColor]];
+    NSColor *resetStrokeColor = [drawView strokeColor];
+    if (resetStrokeColor) {
+        [colorWell setColor:resetStrokeColor];
+    } else {
+        [colorWell setColor:[NSColor redColor]]; // Fallback to red if nil
+    }
+    
     [lineWidthSlider setDoubleValue:[drawView lineWidth]];
     [textSizeSlider setDoubleValue:[drawView textSize]];
     
     // Update preset color wells
     NSArray *presetColors = [drawView presetColors];
-    for (NSInteger i = 0; i < [presetColorWells count] && i < [presetColors count]; i++) {
-        NSColorWell *well = [presetColorWells objectAtIndex:i];
-        [well setColor:[presetColors objectAtIndex:i]];
+    if (presetColors) {
+        for (NSInteger i = 0; i < [presetColorWells count] && i < [presetColors count]; i++) {
+            NSColorWell *well = [presetColorWells objectAtIndex:i];
+            NSColor *presetColor = [presetColors objectAtIndex:i];
+            if (presetColor) {
+                [well setColor:presetColor];
+            } else {
+                // Fallback to default colors if nil
+                NSArray *defaultColors = [NSArray arrayWithObjects:
+                    [NSColor redColor], [NSColor blueColor], [NSColor greenColor],
+                    [NSColor orangeColor], [NSColor purpleColor], nil];
+                if (i < [defaultColors count]) {
+                    [well setColor:[defaultColors objectAtIndex:i]];
+                }
+            }
+        }
     }
 }
 
