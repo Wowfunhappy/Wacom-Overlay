@@ -2039,8 +2039,8 @@
 #pragma mark - Text Annotation Methods
 
 - (void)enterTextInputMode {
-    if (isTextInputMode) {
-        // Toggle off if already in text mode
+    if (isTextInputMode || isEditingText) {
+        // Toggle off if already in text mode or editing
         [self exitTextInputMode];
     } else {
         isTextInputMode = YES;
@@ -2059,23 +2059,31 @@
 - (void)exitTextInputMode {
     isTextInputMode = NO;
     if (isEditingText) {
-        [self finishTextInput];
+        [self cancelTextInput];  // Use cancel instead of finish to avoid double-exit
     }
     NSLog(@"Exited text input mode");
+    
+    // Ensure window state is restored
+    [[self window] setIgnoresMouseEvents:YES];
     
     // Restore normal cursor
     [[NSCursor arrowCursor] set];
 }
 
 - (void)startTextInputAtPoint:(NSPoint)point {
-    if (!isTextInputMode || isEditingText) return;
+    if (!isTextInputMode) return;
+    
+    // If already editing, finish the current text first
+    if (isEditingText) {
+        [self finishTextInput];
+    }
     
     // Store the position for the text
     textInputPosition = point;
     isEditingText = YES;
     
-    // Create a text view for input
-    NSRect textFrame = NSMakeRect(point.x, point.y - 20, 300, 100);
+    // Create a text view for input at the exact click point
+    NSRect textFrame = NSMakeRect(point.x, point.y, 300, 100);
     
     // Create a scroll view to contain the text view
     NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:textFrame];
@@ -2169,10 +2177,8 @@
     activeTextView = nil;
     isEditingText = NO;
     
-    // Exit text input mode after finishing
-    [self exitTextInputMode];
-    
-    // Restore window to ignore mouse events
+    // Don't exit text input mode - allow multiple text entries
+    // Just restore the window state for next input
     [[self window] setIgnoresMouseEvents:YES];
     
     // Redraw to show the new text
