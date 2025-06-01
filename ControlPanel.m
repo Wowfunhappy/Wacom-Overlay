@@ -4,7 +4,7 @@
 @implementation ControlPanel
 
 - (id)initWithDrawView:(DrawView *)aDrawView {
-    NSRect frame = NSMakeRect(0, 0, 300, 180);  // Reduced height since we removed buttons
+    NSRect frame = NSMakeRect(0, 0, 300, 210);  // Increased height for text size control
     self = [super initWithContentRect:frame
                             styleMask:1 | 2 // NSTitledWindowMask | NSClosableWindowMask
                               backing:NSBackingStoreBuffered
@@ -23,7 +23,7 @@
         // Clear button no longer needed as it's in the menu bar now
         
         // Create Current Color label
-        NSTextField *colorLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 140, 80, 17)];
+        NSTextField *colorLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 170, 80, 17)];
         [colorLabel setStringValue:@"Color:"];
         [colorLabel setBezeled:NO];
         [colorLabel setDrawsBackground:NO];
@@ -32,14 +32,14 @@
         [contentView addSubview:colorLabel];
         
         // Create Color well
-        colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(100, 135, 44, 23)];
+        colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(100, 165, 44, 23)];
         [colorWell setColor:[drawView strokeColor]];
         [colorWell setTarget:self];
         [colorWell setAction:@selector(colorChanged:)];
         [contentView addSubview:colorWell];
         
         // Create Line Width label
-        NSTextField *lineWidthLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 110, 80, 17)];
+        NSTextField *lineWidthLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 140, 80, 17)];
         [lineWidthLabel setStringValue:@"Line Width:"];
         [lineWidthLabel setBezeled:NO];
         [lineWidthLabel setDrawsBackground:NO];
@@ -48,13 +48,31 @@
         [contentView addSubview:lineWidthLabel];
         
         // Create Line Width slider
-        lineWidthSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 110, 180, 17)];
+        lineWidthSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 140, 180, 17)];
         [lineWidthSlider setMinValue:1];
         [lineWidthSlider setMaxValue:3.0];
         [lineWidthSlider setDoubleValue:[drawView lineWidth]];
         [lineWidthSlider setTarget:self];
         [lineWidthSlider setAction:@selector(lineWidthChanged:)];
         [contentView addSubview:lineWidthSlider];
+        
+        // Create Text Size label
+        NSTextField *textSizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 110, 80, 17)];
+        [textSizeLabel setStringValue:@"Text Size:"];
+        [textSizeLabel setBezeled:NO];
+        [textSizeLabel setDrawsBackground:NO];
+        [textSizeLabel setEditable:NO];
+        [textSizeLabel setSelectable:NO];
+        [contentView addSubview:textSizeLabel];
+        
+        // Create Text Size slider
+        textSizeSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 110, 180, 17)];
+        [textSizeSlider setMinValue:24.0];
+        [textSizeSlider setMaxValue:48.0];
+        [textSizeSlider setDoubleValue:[drawView textSize]];
+        [textSizeSlider setTarget:self];
+        [textSizeSlider setAction:@selector(textSizeChanged:)];
+        [contentView addSubview:textSizeSlider];
         
         // Create Preset Colors label
         NSTextField *presetsLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 80, 260, 17)];
@@ -199,6 +217,10 @@
     [drawView setLineWidth:[lineWidthSlider doubleValue]];
 }
 
+- (void)textSizeChanged:(id)sender {
+    [drawView setTextSize:[textSizeSlider doubleValue]];
+}
+
 - (void)presetColorChanged:(id)sender {
     NSColorWell *well = (NSColorWell *)sender;
     NSInteger presetIndex = [well tag];
@@ -225,6 +247,7 @@
     [presetColorWells release];
     [colorWell release];
     [lineWidthSlider release];
+    [textSizeSlider release];
     [preset1ColorWell release];
     [preset2ColorWell release];
     [preset3ColorWell release];

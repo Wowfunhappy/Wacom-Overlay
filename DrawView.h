@@ -52,6 +52,7 @@
 
 @property (nonatomic, strong) NSColor *strokeColor;
 @property (nonatomic, assign) CGFloat lineWidth;
+@property (nonatomic, assign) CGFloat textSize;
 @property (nonatomic, assign) BOOL erasing;
 @property (nonatomic, readonly) NSArray *presetColors;
 @property (nonatomic, assign) NSInteger currentColorIndex;

@@ -6,6 +6,7 @@
 
 @synthesize strokeColor;
 @synthesize lineWidth;
+@synthesize textSize;
 @synthesize erasing = mErasing;
 @synthesize currentColorIndex;
 @synthesize smoothingLevel;
@@ -27,6 +28,7 @@
         [self loadColorsFromUserDefaults];
         
         self.lineWidth = 2.0;
+        self.textSize = 16.0;  // Default text size
         mErasing = NO;
         hasLastErasePoint = NO;
         lastErasePoint = NSZeroPoint;
@@ -2079,14 +2081,16 @@
     isEditingText = YES;
     
     // Create a text field for input at the exact click point - start with minimal width
-    NSRect textFrame = NSMakeRect(point.x, point.y, 50, 24);
+    // Height should be proportional to text size
+    CGFloat textFieldHeight = self.textSize + 8; // Add some padding to the font size
+    NSRect textFrame = NSMakeRect(point.x, point.y, 50, textFieldHeight);
     
     activeTextField = [[NSTextField alloc] initWithFrame:textFrame];
     [activeTextField setBackgroundColor:[NSColor clearColor]];
     [activeTextField setDrawsBackground:NO];
     [activeTextField setBordered:NO];
     [activeTextField setTextColor:strokeColor];
-    [activeTextField setFont:[NSFont systemFontOfSize:16]];
+    [activeTextField setFont:[NSFont systemFontOfSize:self.textSize]];
     [activeTextField setEditable:YES];
     [activeTextField setSelectable:YES];
     [activeTextField setStringValue:@""];
@@ -2148,7 +2152,7 @@
         NSMutableDictionary *annotation = [NSMutableDictionary dictionary];
         [annotation setObject:text forKey:@"text"];
         [annotation setObject:[NSValue valueWithPoint:textInputPosition] forKey:@"position"];
-        [annotation setObject:[NSFont systemFontOfSize:16] forKey:@"font"];
+        [annotation setObject:[NSFont systemFontOfSize:self.textSize] forKey:@"font"];
         
         // Add to arrays
         [textAnnotations addObject:annotation];
@@ -2232,9 +2236,9 @@
     NSFont *font = [annotation objectForKey:@"font"];
     
     NSDictionary *attributes = @{NSFontAttributeName: font};
-    NSSize textSize = [text sizeWithAttributes:attributes];
+    NSSize stringSize = [text sizeWithAttributes:attributes];
     
-    return NSMakeRect(position.x, position.y, textSize.width, textSize.height);
+    return NSMakeRect(position.x, position.y, stringSize.width, stringSize.height);
 }
 
 - (void)moveSelectedText:(NSPoint)offset {
@@ -2267,16 +2271,19 @@
         NSFont *font = [textField font];
         
         NSDictionary *attributes = @{NSFontAttributeName: font};
-        NSSize textSize = [currentText sizeWithAttributes:attributes];
+        NSSize stringSize = [currentText sizeWithAttributes:attributes];
         
-        // Add some padding and set reasonable min/max widths
-        CGFloat newWidth = textSize.width + 20; // 20px padding
+        // Add some padding and set reasonable min/max widths and height
+        CGFloat newWidth = stringSize.width + 20; // 20px padding
         newWidth = MAX(newWidth, 50);  // Minimum 50px
         newWidth = MIN(newWidth, 800); // Maximum 800px
+        
+        CGFloat newHeight = self.textSize + 8; // Height proportional to current text size + padding
         
         // Update the frame
         NSRect currentFrame = [textField frame];
         currentFrame.size.width = newWidth;
+        currentFrame.size.height = newHeight;
         [textField setFrame:currentFrame];
     }
 }
