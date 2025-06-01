@@ -464,6 +464,8 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 // Open Controls window
 - (void)openControls:(id)sender {
     if (self.controlPanel) {
+        [NSApp activateIgnoringOtherApps:YES];
+        [self.controlPanel orderFrontRegardless];
         [self.controlPanel makeKeyAndOrderFront:nil];
     }
 }
