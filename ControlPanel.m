@@ -4,7 +4,7 @@
 @implementation ControlPanel
 
 - (id)initWithDrawView:(DrawView *)aDrawView {
-    NSRect frame = NSMakeRect(0, 0, 300, 250);  // Compact layout with left-aligned color wells
+    NSRect frame = NSMakeRect(0, 0, 300, 230);  // Compact layout with left-aligned color wells
     self = [super initWithContentRect:frame
                             styleMask:1 | 2 // NSTitledWindowMask | NSClosableWindowMask
                               backing:NSBackingStoreBuffered
@@ -23,7 +23,7 @@
         // Clear button no longer needed as it's in the menu bar now
         
         // Create Current Color label
-        NSTextField *colorLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 170, 80, 17)];
+        NSTextField *colorLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 195, 80, 17)];
         [colorLabel setStringValue:@"Color:"];
         [colorLabel setBezeled:NO];
         [colorLabel setDrawsBackground:NO];
@@ -32,14 +32,14 @@
         [contentView addSubview:colorLabel];
         
         // Create Color well
-        colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(100, 165, 44, 23)];
+        colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(100, 190, 44, 23)];
         [colorWell setColor:[drawView strokeColor]];
         [colorWell setTarget:self];
         [colorWell setAction:@selector(colorChanged:)];
         [contentView addSubview:colorWell];
         
         // Create Line Width label
-        NSTextField *lineWidthLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 140, 80, 17)];
+        NSTextField *lineWidthLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 165, 80, 17)];
         [lineWidthLabel setStringValue:@"Line Width:"];
         [lineWidthLabel setBezeled:NO];
         [lineWidthLabel setDrawsBackground:NO];
@@ -48,7 +48,7 @@
         [contentView addSubview:lineWidthLabel];
         
         // Create Line Width slider
-        lineWidthSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 140, 180, 17)];
+        lineWidthSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 165, 180, 17)];
         [lineWidthSlider setMinValue:1];
         [lineWidthSlider setMaxValue:3.0];
         [lineWidthSlider setDoubleValue:[drawView lineWidth]];
@@ -57,7 +57,7 @@
         [contentView addSubview:lineWidthSlider];
         
         // Create Text Size label
-        NSTextField *textSizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 110, 80, 17)];
+        NSTextField *textSizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 135, 80, 17)];
         [textSizeLabel setStringValue:@"Text Size:"];
         [textSizeLabel setBezeled:NO];
         [textSizeLabel setDrawsBackground:NO];
@@ -66,7 +66,7 @@
         [contentView addSubview:textSizeLabel];
         
         // Create Text Size slider
-        textSizeSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 110, 180, 17)];
+        textSizeSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 135, 180, 17)];
         [textSizeSlider setMinValue:24.0];
         [textSizeSlider setMaxValue:48.0];
         [textSizeSlider setDoubleValue:[drawView textSize]];
@@ -75,7 +75,7 @@
         [contentView addSubview:textSizeSlider];
         
         // Create Preset Colors label
-        NSTextField *presetsLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 80, 260, 17)];
+        NSTextField *presetsLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 105, 260, 17)];
         [presetsLabel setStringValue:@"Preset Colors:"];
         [presetsLabel setBezeled:NO];
         [presetsLabel setDrawsBackground:NO];
@@ -88,35 +88,35 @@
         NSArray *presetColors = [drawView presetColors];
         
         // Create color wells for each preset
-        preset1ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(20, 50, 44, 23)];
+        preset1ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(20, 75, 44, 23)];
         [preset1ColorWell setColor:[presetColors objectAtIndex:0]];
         [preset1ColorWell setTarget:self];
         [preset1ColorWell setAction:@selector(presetColorChanged:)];
         [preset1ColorWell setTag:0]; // Use tag to store the preset index
         [contentView addSubview:preset1ColorWell];
         
-        preset2ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(70, 50, 44, 23)];
+        preset2ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(70, 75, 44, 23)];
         [preset2ColorWell setColor:[presetColors objectAtIndex:1]];
         [preset2ColorWell setTarget:self];
         [preset2ColorWell setAction:@selector(presetColorChanged:)];
         [preset2ColorWell setTag:1]; // Use tag to store the preset index
         [contentView addSubview:preset2ColorWell];
         
-        preset3ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(120, 50, 44, 23)];
+        preset3ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(120, 75, 44, 23)];
         [preset3ColorWell setColor:[presetColors objectAtIndex:2]];
         [preset3ColorWell setTarget:self];
         [preset3ColorWell setAction:@selector(presetColorChanged:)];
         [preset3ColorWell setTag:2]; // Use tag to store the preset index
         [contentView addSubview:preset3ColorWell];
         
-        preset4ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(170, 50, 44, 23)];
+        preset4ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(170, 75, 44, 23)];
         [preset4ColorWell setColor:[presetColors objectAtIndex:3]];
         [preset4ColorWell setTarget:self];
         [preset4ColorWell setAction:@selector(presetColorChanged:)];
         [preset4ColorWell setTag:3]; // Use tag to store the preset index
         [contentView addSubview:preset4ColorWell];
         
-        preset5ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(220, 50, 44, 23)];
+        preset5ColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(220, 75, 44, 23)];
         [preset5ColorWell setColor:[presetColors objectAtIndex:4]];
         [preset5ColorWell setTarget:self];
         [preset5ColorWell setAction:@selector(presetColorChanged:)];
@@ -128,7 +128,7 @@
                             preset1ColorWell, preset2ColorWell, preset3ColorWell, preset4ColorWell, preset5ColorWell, nil];
         
         // Add preset labels
-        NSTextField *preset1Label = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 30, 44, 17)];
+        NSTextField *preset1Label = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 55, 44, 17)];
         [preset1Label setStringValue:@"1"];
         [preset1Label setBezeled:NO];
         [preset1Label setDrawsBackground:NO];
@@ -138,7 +138,7 @@
         [contentView addSubview:preset1Label];
         [preset1Label release];
         
-        NSTextField *preset2Label = [[NSTextField alloc] initWithFrame:NSMakeRect(70, 30, 44, 17)];
+        NSTextField *preset2Label = [[NSTextField alloc] initWithFrame:NSMakeRect(70, 55, 44, 17)];
         [preset2Label setStringValue:@"2"];
         [preset2Label setBezeled:NO];
         [preset2Label setDrawsBackground:NO];
@@ -148,7 +148,7 @@
         [contentView addSubview:preset2Label];
         [preset2Label release];
         
-        NSTextField *preset3Label = [[NSTextField alloc] initWithFrame:NSMakeRect(120, 30, 44, 17)];
+        NSTextField *preset3Label = [[NSTextField alloc] initWithFrame:NSMakeRect(120, 55, 44, 17)];
         [preset3Label setStringValue:@"3"];
         [preset3Label setBezeled:NO];
         [preset3Label setDrawsBackground:NO];
@@ -158,7 +158,7 @@
         [contentView addSubview:preset3Label];
         [preset3Label release];
         
-        NSTextField *preset4Label = [[NSTextField alloc] initWithFrame:NSMakeRect(170, 30, 44, 17)];
+        NSTextField *preset4Label = [[NSTextField alloc] initWithFrame:NSMakeRect(170, 55, 44, 17)];
         [preset4Label setStringValue:@"4"];
         [preset4Label setBezeled:NO];
         [preset4Label setDrawsBackground:NO];
@@ -168,7 +168,7 @@
         [contentView addSubview:preset4Label];
         [preset4Label release];
         
-        NSTextField *preset5Label = [[NSTextField alloc] initWithFrame:NSMakeRect(220, 30, 44, 17)];
+        NSTextField *preset5Label = [[NSTextField alloc] initWithFrame:NSMakeRect(220, 55, 44, 17)];
         [preset5Label setStringValue:@"5"];
         [preset5Label setBezeled:NO];
         [preset5Label setDrawsBackground:NO];
@@ -179,7 +179,7 @@
         [preset5Label release];
         
         // Add Reset to Defaults button
-        NSButton *resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(20, 10, 120, 25)];
+        NSButton *resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(10, 20, 120, 20)];
         [resetButton setTitle:@"Reset to Defaults"];
         [resetButton setTarget:self];
         [resetButton setAction:@selector(resetToDefaultsClicked:)];
