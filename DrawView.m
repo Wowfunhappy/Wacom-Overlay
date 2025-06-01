@@ -50,8 +50,7 @@
         undoTextColors = [[NSMutableArray alloc] init];
         isTextInputMode = NO;
         isEditingText = NO;
-        activeTextView = nil;
-        activeScrollView = nil;
+        activeTextField = nil;
         selectedTextIndex = -1;
         
         // Make the view transparent to allow click-through
@@ -2074,52 +2073,22 @@
     textInputPosition = point;
     isEditingText = YES;
     
-    // Create a text view for input at the exact click point
-    NSRect textFrame = NSMakeRect(point.x, point.y, 300, 100);
+    // Create a text field for input at the exact click point
+    NSRect textFrame = NSMakeRect(point.x, point.y, 300, 24);
     
-    // Create a scroll view to contain the text view
-    NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:textFrame];
-    [scrollView setHasVerticalScroller:NO];
-    [scrollView setHasHorizontalScroller:NO];
-    [scrollView setBorderType:NSNoBorder];
-    [scrollView setAutohidesScrollers:YES];
-    [scrollView setBackgroundColor:[NSColor clearColor]];
-    [scrollView setDrawsBackground:NO];
-    
-    // Create text view
-    NSRect contentFrame = [[scrollView contentView] frame];
-    activeTextView = [[NSTextView alloc] initWithFrame:contentFrame];
-    
-    // Configure the text view
-    [activeTextView setBackgroundColor:[NSColor clearColor]];
-    [activeTextView setDrawsBackground:NO];
-    [activeTextView setTextColor:strokeColor];
-    [activeTextView setFont:[NSFont systemFontOfSize:16]];
-    [activeTextView setRichText:NO];
-    [activeTextView setFieldEditor:NO];
-    [activeTextView setImportsGraphics:NO];
-    [activeTextView setAllowsUndo:NO];
-    [activeTextView setDelegate:(id<NSTextViewDelegate>)self];
-    [activeTextView setEditable:YES];
-    [activeTextView setSelectable:YES];
-    [activeTextView setVerticallyResizable:YES];
-    [activeTextView setHorizontallyResizable:NO];
-    [activeTextView setMinSize:NSMakeSize(100, 20)];
-    [activeTextView setMaxSize:NSMakeSize(500, 200)];
-    [activeTextView setTextContainerInset:NSMakeSize(0, 0)];
-    
-    // Set up text container
-    [[activeTextView textContainer] setContainerSize:NSMakeSize(contentFrame.size.width, FLT_MAX)];
-    [[activeTextView textContainer] setWidthTracksTextView:YES];
-    
-    // Set the text view as the document view of the scroll view
-    [scrollView setDocumentView:activeTextView];
+    activeTextField = [[NSTextField alloc] initWithFrame:textFrame];
+    [activeTextField setBackgroundColor:[NSColor clearColor]];
+    [activeTextField setDrawsBackground:NO];
+    [activeTextField setBordered:NO];
+    [activeTextField setTextColor:strokeColor];
+    [activeTextField setFont:[NSFont systemFontOfSize:16]];
+    [activeTextField setEditable:YES];
+    [activeTextField setSelectable:YES];
+    [activeTextField setStringValue:@""];
+    [activeTextField setDelegate:self];
     
     // Add to view
-    [self addSubview:scrollView];
-    
-    // Store reference to scroll view for cleanup
-    activeScrollView = [scrollView retain];
+    [self addSubview:activeTextField];
     
     // Temporarily allow the window to accept events for text input
     [[self window] setIgnoresMouseEvents:NO];
@@ -2146,28 +2115,28 @@
 }
 
 - (void)focusTextView {
-    if (activeTextView) {
+    if (activeTextField) {
         // Set first responder (window should already be key)
-        BOOL success = [[self window] makeFirstResponder:activeTextView];
+        BOOL success = [[self window] makeFirstResponder:activeTextField];
         if (success) {
-            NSLog(@"Text view focused successfully");
+            NSLog(@"Text field focused successfully");
         } else {
-            NSLog(@"Failed to focus text view - attempting to make window key first");
+            NSLog(@"Failed to focus text field - attempting to make window key first");
             [[self window] makeKeyWindow];
-            success = [[self window] makeFirstResponder:activeTextView];
+            success = [[self window] makeFirstResponder:activeTextField];
             if (success) {
-                NSLog(@"Text view focused successfully on second attempt");
+                NSLog(@"Text field focused successfully on second attempt");
             } else {
-                NSLog(@"Failed to focus text view even after making window key");
+                NSLog(@"Failed to focus text field even after making window key");
             }
         }
     }
 }
 
 - (void)finishTextInput {
-    if (!isEditingText || !activeTextView) return;
+    if (!isEditingText || !activeTextField) return;
     
-    NSString *text = [[activeTextView string] copy];
+    NSString *text = [[activeTextField stringValue] copy];
     
     if ([text length] > 0) {
         // Create text annotation dictionary
@@ -2188,10 +2157,9 @@
     }
     
     // Clean up
-    [activeScrollView removeFromSuperview];
-    [activeScrollView release];
-    activeScrollView = nil;
-    activeTextView = nil;
+    [activeTextField removeFromSuperview];
+    [activeTextField release];
+    activeTextField = nil;
     isEditingText = NO;
     
     // Completely exit text mode and restore normal operation
@@ -2206,12 +2174,11 @@
 }
 
 - (void)cancelTextInput {
-    if (!isEditingText || !activeTextView) return;
+    if (!isEditingText || !activeTextField) return;
     
-    [activeScrollView removeFromSuperview];
-    [activeScrollView release];
-    activeScrollView = nil;
-    activeTextView = nil;
+    [activeTextField removeFromSuperview];
+    [activeTextField release];
+    activeTextField = nil;
     isEditingText = NO;
     
     // Restore window to ignore mouse events and normal cursor
@@ -2276,23 +2243,20 @@
     [self setNeedsDisplay:YES];
 }
 
-#pragma mark - NSTextViewDelegate
+#pragma mark - NSTextFieldDelegate
 
-- (BOOL)textView:(NSTextView *)textView doCommandBySelector:(SEL)selector {
-    if (selector == @selector(insertNewline:)) {
-        // Enter key pressed - finish text input
-        [self finishTextInput];
-        return YES;
-    } else if (selector == @selector(insertNewlineIgnoringFieldEditor:)) {
-        // Option-Enter pressed - insert soft line break
-        [textView insertText:@"\n" replacementRange:NSMakeRange([textView selectedRange].location, 0)];
-        return YES;
-    } else if (selector == @selector(cancelOperation:)) {
-        // Escape key pressed - cancel text input
-        [self cancelTextInput];
-        return YES;
+- (void)controlTextDidEndEditing:(NSNotification *)notification {
+    NSTextField *textField = [notification object];
+    if (textField == activeTextField) {
+        NSInteger whyEnd = [[[notification userInfo] objectForKey:@"NSTextMovement"] intValue];
+        if (whyEnd == NSReturnTextMovement) {
+            // Enter key pressed - finish text input
+            [self finishTextInput];
+        } else if (whyEnd == NSCancelTextMovement) {
+            // Escape key pressed - cancel text input
+            [self cancelTextInput];
+        }
     }
-    return NO;
 }
 
 @end

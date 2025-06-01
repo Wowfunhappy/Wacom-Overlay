@@ -1,7 +1,8 @@
 #import <Cocoa/Cocoa.h>
+#import <QuartzCore/QuartzCore.h>
 #import "AppDelegate.h"
 
-@interface DrawView : NSView <NSTextViewDelegate> {
+@interface DrawView : NSView <NSTextFieldDelegate> {
     NSMutableArray *paths;
     NSMutableArray *pathColors;
     NSMutableArray *strokeMarkers;
@@ -43,8 +44,7 @@
     NSMutableArray *undoTextColors;
     BOOL isTextInputMode;
     BOOL isEditingText;
-    NSTextView *activeTextView;
-    NSScrollView *activeScrollView;
+    NSTextField *activeTextField;
     NSInteger selectedTextIndex;
     NSPoint textInputPosition;
     NSInteger originalWindowLevel;
