@@ -2415,7 +2415,6 @@
         // Add some padding and set reasonable min/max widths and height
         CGFloat newWidth = stringSize.width + 20; // 20px padding
         newWidth = MAX(newWidth, 50);  // Minimum 50px
-        newWidth = MIN(newWidth, 800); // Maximum 800px
         
         CGFloat newHeight = self.textSize + 8; // Height proportional to current text size + padding
         
