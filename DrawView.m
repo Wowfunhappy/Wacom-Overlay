@@ -673,6 +673,11 @@
         if (isDraggingStroke) {
             isDraggingStroke = NO;
             selectedTextIndex = -1;  // Clear text selection
+            
+            // Ensure window loses focus and mouse events are properly ignored
+            [[self window] setIgnoresMouseEvents:YES];
+            [[self window] resignKeyWindow];
+            
             NSLog(@"DrawView: Finished dragging");
         }
         
@@ -2244,6 +2249,15 @@
 }
 
 #pragma mark - NSTextFieldDelegate
+
+- (BOOL)control:(NSControl *)control textView:(NSTextView *)textView doCommandBySelector:(SEL)selector {
+    // Block any attempt at multiline input (Option+Enter, etc.)
+    if (selector == @selector(insertNewlineIgnoringFieldEditor:)) {
+        // Option+Enter pressed - ignore it completely for single-line only
+        return YES;
+    }
+    return NO;
+}
 
 - (void)controlTextDidChange:(NSNotification *)notification {
     NSTextField *textField = [notification object];
