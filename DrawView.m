@@ -713,10 +713,15 @@
     NSPoint screenPoint = [NSEvent mouseLocation];
     NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
     
-    // Check if pen is in proximity - pen cursor takes precedence
-    if ([event isTabletPointerEvent] || mErasing) {
-        // Let the system handle pen cursors
-        return;
+    // Check if this is an actual pen/stylus event - pen cursor takes precedence
+    // Only skip cursor management for actual pen events, not finger touchpad events
+    if ([event isTabletPointerEvent]) {
+        NSPointingDeviceType deviceType = [event pointingDeviceType];
+        // Skip only for pen tip (1) or eraser (2), allow finger touchpad (0) through
+        if (deviceType == 1 || deviceType == 2 || mErasing) {
+            // Let the system handle pen cursors
+            return;
+        }
     }
     
     // Check if we're over a stroke that can be dragged
