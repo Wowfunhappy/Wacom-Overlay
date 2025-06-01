@@ -51,6 +51,7 @@
         isTextInputMode = NO;
         isEditingText = NO;
         activeTextView = nil;
+        activeScrollView = nil;
         selectedTextIndex = -1;
         
         // Make the view transparent to allow click-through
@@ -2047,6 +2048,11 @@
         
         // Change cursor to indicate text mode
         [[NSCursor IBeamCursor] set];
+        
+        // Start text input immediately at current mouse position
+        NSPoint mouseLocation = [NSEvent mouseLocation];
+        NSPoint viewPoint = [self convertScreenPointToView:mouseLocation];
+        [self startTextInputAtPoint:viewPoint];
     }
 }
 
@@ -2070,11 +2076,23 @@
     
     // Create a text view for input
     NSRect textFrame = NSMakeRect(point.x, point.y - 20, 300, 100);
-    activeTextView = [[NSTextView alloc] initWithFrame:textFrame];
+    
+    // Create a scroll view to contain the text view
+    NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:textFrame];
+    [scrollView setHasVerticalScroller:NO];
+    [scrollView setHasHorizontalScroller:NO];
+    [scrollView setBorderType:NSNoBorder];
+    [scrollView setAutohidesScrollers:YES];
+    [scrollView setBackgroundColor:[NSColor clearColor]];
+    [scrollView setDrawsBackground:NO];
+    
+    // Create text view
+    NSRect contentFrame = [[scrollView contentView] frame];
+    activeTextView = [[NSTextView alloc] initWithFrame:contentFrame];
     
     // Configure the text view
-    [activeTextView setBackgroundColor:[NSColor whiteColor]];
-    [activeTextView setDrawsBackground:YES];
+    [activeTextView setBackgroundColor:[NSColor clearColor]];
+    [activeTextView setDrawsBackground:NO];
     [activeTextView setTextColor:strokeColor];
     [activeTextView setFont:[NSFont systemFontOfSize:16]];
     [activeTextView setRichText:NO];
@@ -2085,17 +2103,23 @@
     [activeTextView setEditable:YES];
     [activeTextView setSelectable:YES];
     [activeTextView setVerticallyResizable:YES];
-    [activeTextView setHorizontallyResizable:YES];
+    [activeTextView setHorizontallyResizable:NO];
     [activeTextView setMinSize:NSMakeSize(100, 20)];
     [activeTextView setMaxSize:NSMakeSize(500, 200)];
+    [activeTextView setTextContainerInset:NSMakeSize(0, 0)];
     
-    // Add border for visibility during editing
-    [[activeTextView layer] setBorderWidth:1.0];
-    [[activeTextView layer] setBorderColor:[[strokeColor colorWithAlphaComponent:0.5] CGColor]];
-    [activeTextView setWantsLayer:YES];
+    // Set up text container
+    [[activeTextView textContainer] setContainerSize:NSMakeSize(contentFrame.size.width, FLT_MAX)];
+    [[activeTextView textContainer] setWidthTracksTextView:YES];
+    
+    // Set the text view as the document view of the scroll view
+    [scrollView setDocumentView:activeTextView];
     
     // Add to view
-    [self addSubview:activeTextView];
+    [self addSubview:scrollView];
+    
+    // Store reference to scroll view for cleanup
+    activeScrollView = [scrollView retain];
     
     // Temporarily allow the window to accept events for text input
     [[self window] setIgnoresMouseEvents:NO];
@@ -2139,9 +2163,14 @@
     }
     
     // Clean up
-    [activeTextView removeFromSuperview];
+    [activeScrollView removeFromSuperview];
+    [activeScrollView release];
+    activeScrollView = nil;
     activeTextView = nil;
     isEditingText = NO;
+    
+    // Exit text input mode after finishing
+    [self exitTextInputMode];
     
     // Restore window to ignore mouse events
     [[self window] setIgnoresMouseEvents:YES];
@@ -2153,7 +2182,9 @@
 - (void)cancelTextInput {
     if (!isEditingText || !activeTextView) return;
     
-    [activeTextView removeFromSuperview];
+    [activeScrollView removeFromSuperview];
+    [activeScrollView release];
+    activeScrollView = nil;
     activeTextView = nil;
     isEditingText = NO;
     

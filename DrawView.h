@@ -44,6 +44,7 @@
     BOOL isTextInputMode;
     BOOL isEditingText;
     NSTextView *activeTextView;
+    NSScrollView *activeScrollView;
     NSInteger selectedTextIndex;
     NSPoint textInputPosition;
 }
