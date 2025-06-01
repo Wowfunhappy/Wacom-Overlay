@@ -50,7 +50,7 @@
         if (savedTextSize > 0) {
             textSize = savedTextSize;
         } else {
-            textSize = 16.0;  // Default text size
+            textSize = 24.0;  // Default text size
         }
         mErasing = NO;
         hasLastErasePoint = NO;
@@ -2475,7 +2475,7 @@
     self.lineWidth = 2.0;
     
     // Reset text size
-    textSize = 16.0;
+    textSize = 24.0;
     
     // Clear user defaults
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
