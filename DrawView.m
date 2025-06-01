@@ -2073,8 +2073,8 @@
     textInputPosition = point;
     isEditingText = YES;
     
-    // Create a text field for input at the exact click point
-    NSRect textFrame = NSMakeRect(point.x, point.y, 300, 24);
+    // Create a text field for input at the exact click point - start with minimal width
+    NSRect textFrame = NSMakeRect(point.x, point.y, 50, 24);
     
     activeTextField = [[NSTextField alloc] initWithFrame:textFrame];
     [activeTextField setBackgroundColor:[NSColor clearColor]];
@@ -2244,6 +2244,28 @@
 }
 
 #pragma mark - NSTextFieldDelegate
+
+- (void)controlTextDidChange:(NSNotification *)notification {
+    NSTextField *textField = [notification object];
+    if (textField == activeTextField) {
+        // Auto-resize the text field width based on content
+        NSString *currentText = [textField stringValue];
+        NSFont *font = [textField font];
+        
+        NSDictionary *attributes = @{NSFontAttributeName: font};
+        NSSize textSize = [currentText sizeWithAttributes:attributes];
+        
+        // Add some padding and set reasonable min/max widths
+        CGFloat newWidth = textSize.width + 20; // 20px padding
+        newWidth = MAX(newWidth, 50);  // Minimum 50px
+        newWidth = MIN(newWidth, 800); // Maximum 800px
+        
+        // Update the frame
+        NSRect currentFrame = [textField frame];
+        currentFrame.size.width = newWidth;
+        [textField setFrame:currentFrame];
+    }
+}
 
 - (void)controlTextDidEndEditing:(NSNotification *)notification {
     NSTextField *textField = [notification object];
