@@ -2056,6 +2056,9 @@
     
     // Ensure window state is restored
     [[self window] setIgnoresMouseEvents:YES];
+    if (originalWindowLevel > 0) {
+        [[self window] setLevel:originalWindowLevel]; // Restore original window level if it was set
+    }
     
     // Restore normal cursor
     [[NSCursor arrowCursor] set];
@@ -2121,8 +2124,20 @@
     // Temporarily allow the window to accept events for text input
     [[self window] setIgnoresMouseEvents:NO];
     
-    // Make the window key to accept keyboard input (but don't order front to avoid focus disruption)
-    [[self window] makeKeyWindow];
+    // Store the original window level
+    NSInteger originalLevel = [[self window] level];
+    
+    // Temporarily lower window level to allow proper keyboard focus
+    [[self window] setLevel:NSFloatingWindowLevel];
+    
+    // Activate the application to ensure it can receive keyboard events
+    [NSApp activateIgnoringOtherApps:YES];
+    
+    // Make the window key and order front to accept keyboard input
+    [[self window] makeKeyAndOrderFront:nil];
+    
+    // Store original level for restoration
+    originalWindowLevel = originalLevel;
     
     // Use performSelector to delay setting first responder to avoid the exception
     [self performSelector:@selector(focusTextView) withObject:nil afterDelay:0.1];
@@ -2132,13 +2147,19 @@
 
 - (void)focusTextView {
     if (activeTextView) {
-        // Ensure window is key and then set first responder
-        [[self window] makeKeyWindow];
+        // Set first responder (window should already be key)
         BOOL success = [[self window] makeFirstResponder:activeTextView];
         if (success) {
             NSLog(@"Text view focused successfully");
         } else {
-            NSLog(@"Failed to focus text view");
+            NSLog(@"Failed to focus text view - attempting to make window key first");
+            [[self window] makeKeyWindow];
+            success = [[self window] makeFirstResponder:activeTextView];
+            if (success) {
+                NSLog(@"Text view focused successfully on second attempt");
+            } else {
+                NSLog(@"Failed to focus text view even after making window key");
+            }
         }
     }
 }
@@ -2175,6 +2196,7 @@
     
     // Completely exit text mode and restore normal operation
     [[self window] setIgnoresMouseEvents:YES];
+    [[self window] setLevel:originalWindowLevel]; // Restore original window level
     [[NSCursor arrowCursor] set];
     
     NSLog(@"Text input completed, returned to normal mode");
@@ -2194,6 +2216,7 @@
     
     // Restore window to ignore mouse events and normal cursor
     [[self window] setIgnoresMouseEvents:YES];
+    [[self window] setLevel:originalWindowLevel]; // Restore original window level
     [[NSCursor arrowCursor] set];
     
     NSLog(@"Cancelled text input");

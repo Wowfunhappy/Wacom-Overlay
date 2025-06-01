@@ -47,6 +47,7 @@
     NSScrollView *activeScrollView;
     NSInteger selectedTextIndex;
     NSPoint textInputPosition;
+    NSInteger originalWindowLevel;
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
