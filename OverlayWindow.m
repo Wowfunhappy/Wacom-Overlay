@@ -18,12 +18,14 @@
         // Set window properties for an overlay that won't interfere with mouse
         [self setAcceptsMouseMovedEvents:YES];
         
-        // Set a high level so we're above ALL windows, including full screen apps
-        [self setLevel:NSScreenSaverWindowLevel];
+        // Set window level just below the menu bar (above all normal windows)
+        // Menu bar is at kCGMainMenuWindowLevelKey, so we go just below it
+        [self setLevel:CGWindowLevelForKey(kCGMainMenuWindowLevelKey) - 1];
         
-        // IMPORTANT: Make the window visible on all spaces (virtual desktops)
+        // IMPORTANT: Make the window visible on all spaces and above normal windows
         [self setCollectionBehavior:NSWindowCollectionBehaviorCanJoinAllSpaces | 
-                                   NSWindowCollectionBehaviorFullScreenAuxiliary];
+                                   NSWindowCollectionBehaviorFullScreenAuxiliary |
+                                   NSWindowCollectionBehaviorStationary];
         
         // Important: We want the window to ignore ALL mouse events
         // We'll use a global event monitor to catch tablet events instead
