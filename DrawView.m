@@ -339,54 +339,20 @@
             return;
         }
         
-        // Attempt to find a stroke at this point
-        BOOL foundStroke = NO;
+        // Attempt to find a stroke at this point using the more forgiving selection method
+        NSInteger strokeIndex = [self findStrokeAtPointForSelection:viewPoint];
         
-        // Only attempt to find a stroke if we have strokes to check
-        if ([paths count] > 0 && [strokeMarkers count] > 0) {
-            for (NSInteger markerIndex = [strokeMarkers count] - 1; markerIndex >= 0; markerIndex--) {
-                // Get the range of paths for this stroke
-                NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
-                NSInteger endIndex;
-                
-                if (markerIndex < [strokeMarkers count] - 1) {
-                    endIndex = [[strokeMarkers objectAtIndex:markerIndex + 1] integerValue] - 1;
-                } else {
-                    endIndex = [paths count] - 1;
-                }
-                
-                // Check each path segment in the stroke
-                for (NSInteger i = startIndex; i <= endIndex; i++) {
-                    NSBezierPath *path = [paths objectAtIndex:i];
-                    NSRect bounds = [path bounds];
-                    
-                    // Extend the bounds by a reasonable amount for selection
-                    // Adjust this value to control selection sensitivity (smaller = more precise)
-                    NSRect extendedBounds = NSInsetRect(bounds, -3, -3);
-                    
-                    if (NSPointInRect(viewPoint, extendedBounds)) {
-                        // Set this as the selected stroke
-                        selectedStrokeIndex = markerIndex;
-                        isStrokeSelected = YES;
-                        isDraggingStroke = YES;
-                        dragStartPoint = viewPoint;
-                        
-                        // Find all related strokes (same color and intersecting)
-                        [self findRelatedStrokes:markerIndex];
-                        
-                        foundStroke = YES;
-                        break;
-                    }
-                }
-                
-                if (foundStroke) {
-                    break;
-                }
-            }
-        }
-        
-        // If no stroke was found at this point, clear any existing selection
-        if (!foundStroke) {
+        if (strokeIndex >= 0) {
+            // Set this as the selected stroke
+            selectedStrokeIndex = strokeIndex;
+            isStrokeSelected = YES;
+            isDraggingStroke = YES;
+            dragStartPoint = viewPoint;
+            
+            // Find all related strokes (same color and intersecting)
+            [self findRelatedStrokes:strokeIndex];
+        } else {
+            // If no stroke was found at this point, clear any existing selection
             if (isStrokeSelected) {
                 isStrokeSelected = NO;
                 selectedStrokeIndex = -1;
@@ -421,7 +387,8 @@
                 CGFloat distance = sqrt(dx*dx + dy*dy);
                 
                 // Only process erase if we've moved enough distance (to avoid rapid erasures)
-                if (distance > 10.0) {
+                // Reduced from 10.0 to 2.0 for more responsive erasing
+                if (distance > 2.0) {
                     // First try to erase text at this point
                     NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
                     if (textIndex >= 0) {
@@ -543,10 +510,10 @@
         
         // Normal drawing mode - if we have a current path, add a line to it
         if (currentPath) {
-            // Create a segment path for this movement with pressure-sensitive width
-            NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
-            [segmentPath setLineCapStyle:NSRoundLineCapStyle];
-            [segmentPath setLineJoinStyle:NSRoundLineJoinStyle];
+            // Calculate distance between last point and current point
+            CGFloat dx = smoothedPoint.x - lastPoint.x;
+            CGFloat dy = smoothedPoint.y - lastPoint.y;
+            CGFloat distance = sqrt(dx*dx + dy*dy);
             
             // Use pressure if available to adjust line width for this segment
             float segmentWidth = lineWidth;
@@ -556,21 +523,38 @@
                 
                 NSLog(@"DrawView: Using pressure: %f, width: %f", [event pressure], segmentWidth);
             }
-            [segmentPath setLineWidth:segmentWidth];
             
-            // Create segment from last point to current point
-            [segmentPath moveToPoint:lastPoint];
-            [segmentPath lineToPoint:smoothedPoint];
+            // If the distance is large, interpolate intermediate points
+            NSInteger numSegments = MAX(1, (NSInteger)(distance / 2.0)); // Create a segment every 2 pixels
             
-            // Add this segment to our collection
-            [paths addObject:segmentPath];
-            [pathColors addObject:[strokeColor copy]]; // Store current color with path
-            [segmentPath release];
+            for (NSInteger i = 0; i < numSegments; i++) {
+                // Calculate interpolated point
+                CGFloat t = (i + 1.0) / numSegments;
+                NSPoint interpolatedPoint = NSMakePoint(
+                    lastPoint.x + (dx * t),
+                    lastPoint.y + (dy * t)
+                );
+                
+                // Create a segment path for this movement
+                NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
+                [segmentPath setLineCapStyle:NSRoundLineCapStyle];
+                [segmentPath setLineJoinStyle:NSRoundLineJoinStyle];
+                [segmentPath setLineWidth:segmentWidth];
+                
+                // Create segment from last point to interpolated point
+                [segmentPath moveToPoint:(i == 0 ? lastPoint : NSMakePoint(lastPoint.x + (dx * i / numSegments), lastPoint.y + (dy * i / numSegments)))];
+                [segmentPath lineToPoint:interpolatedPoint];
+                
+                // Add this segment to our collection
+                [paths addObject:segmentPath];
+                [pathColors addObject:[strokeColor copy]]; // Store current color with path
+                [segmentPath release];
+            }
             
             // Update last point for next segment
             lastPoint = smoothedPoint;
             
-            NSLog(@"DrawView: Adding point to path: %@", NSStringFromPoint(viewPoint));
+            NSLog(@"DrawView: Added %ld interpolated segments, distance: %f", (long)numSegments, distance);
         }
     } else {
         // For regular mouse events, use the event's locationInWindow converted to view coordinates
@@ -973,9 +957,19 @@
     }
 }
 
-// Find the marker index of the stroke that contains the given point
+// Find the marker index of the stroke that contains the given point (for erasing - pixel perfect)
 - (NSInteger)findStrokeAtPoint:(NSPoint)point {
-    NSLog(@"DrawView: Attempting to find stroke at point: %@", NSStringFromPoint(point));
+    return [self findStrokeAtPoint:point forSelection:NO];
+}
+
+// Find the marker index of the stroke that contains the given point (for selection - more forgiving)
+- (NSInteger)findStrokeAtPointForSelection:(NSPoint)point {
+    return [self findStrokeAtPoint:point forSelection:YES];
+}
+
+// Internal method that handles both erasing and selection with different thresholds
+- (NSInteger)findStrokeAtPoint:(NSPoint)point forSelection:(BOOL)isForSelection {
+    NSLog(@"DrawView: Attempting to find stroke at point: %@ (forSelection: %d)", NSStringFromPoint(point), isForSelection);
     
     // Log information about the current state
     NSLog(@"DrawView: Current state - paths: %lu, strokeMarkers: %lu",
@@ -1007,8 +1001,16 @@
             NSBezierPath *path = [paths objectAtIndex:i];
             CGFloat pathWidth = [path lineWidth];
             
-            // Use a much larger detection threshold for now (debugging)
-            CGFloat detectionThreshold = pathWidth * 10.0;
+            CGFloat detectionThreshold;
+            if (isForSelection) {
+                // For selection/dragging, be more forgiving - use 3x the stroke width
+                // with a minimum of 5 pixels for easy selection
+                detectionThreshold = MAX(5.0, pathWidth * 3.0);
+            } else {
+                // For erasing, use pixel-perfect detection
+                // For very thin strokes, ensure a minimum threshold of 1 pixel
+                detectionThreshold = MAX(1.0, pathWidth);
+            }
             
             // Check if point is near this path segment
             if ([self point:point isNearPath:path withinDistance:detectionThreshold]) {
@@ -1217,8 +1219,8 @@
         }
     }
     
-    // Fallback to the extended bounds check which we already passed
-    return YES;
+    // For complex paths, we couldn't find any segment within distance
+    return NO;
 }
 
 // Calculate distance from point to line segment
