@@ -1,7 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #import "AppDelegate.h"
 
-@interface DrawView : NSView {
+@interface DrawView : NSView <NSTextViewDelegate> {
     NSMutableArray *paths;
     NSMutableArray *pathColors;
     NSMutableArray *strokeMarkers;
@@ -35,6 +35,17 @@
     NSPoint straightLineStartPoint;
     NSBezierPath *straightLinePath; // For preview during drag
     CGFloat straightLineWidth; // To store the width at the time shift was pressed
+    
+    // Text annotation variables
+    NSMutableArray *textAnnotations; // Array of dictionaries with text, position, attributes
+    NSMutableArray *textColors; // Colors for each text annotation
+    NSMutableArray *undoTextAnnotations;
+    NSMutableArray *undoTextColors;
+    BOOL isTextInputMode;
+    BOOL isEditingText;
+    NSTextView *activeTextView;
+    NSInteger selectedTextIndex;
+    NSPoint textInputPosition;
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
@@ -66,5 +77,16 @@
 - (void)findConnectedStrokes:(NSInteger)strokeIndex withColor:(NSColor *)selectedColor processedStrokes:(NSMutableArray *)processedStrokes;
 - (BOOL)doStrokesIntersect:(NSInteger)strokeIndex1 strokeIndex2:(NSInteger)strokeIndex2;
 - (CGPathRef)CGPathFromNSBezierPath:(NSBezierPath *)path;
+
+// Text annotation methods
+- (void)startTextInputAtPoint:(NSPoint)point;
+- (void)finishTextInput;
+- (void)cancelTextInput;
+- (NSInteger)findTextAnnotationAtPoint:(NSPoint)point;
+- (NSRect)boundsForTextAnnotation:(NSDictionary *)annotation;
+- (void)moveSelectedText:(NSPoint)offset;
+- (void)drawTextAnnotations;
+- (void)enterTextInputMode;
+- (void)exitTextInputMode;
 
 @end

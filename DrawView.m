@@ -43,6 +43,16 @@
         dragStartPoint = NSZeroPoint;
         relatedStrokeIndices = [[NSMutableArray alloc] init];
         
+        // Initialize text annotation variables
+        textAnnotations = [[NSMutableArray alloc] init];
+        textColors = [[NSMutableArray alloc] init];
+        undoTextAnnotations = [[NSMutableArray alloc] init];
+        undoTextColors = [[NSMutableArray alloc] init];
+        isTextInputMode = NO;
+        isEditingText = NO;
+        activeTextView = nil;
+        selectedTextIndex = -1;
+        
         // Make the view transparent to allow click-through
         [self setWantsLayer:YES];
         
@@ -137,6 +147,9 @@
         [strokeColor set];
         [straightLinePath stroke];
     }
+    
+    // Draw text annotations
+    [self drawTextAnnotations];
     
     // Removed debug visualization code
 }
@@ -293,6 +306,25 @@
     } else {
         // For regular mouse events, use the event's locationInWindow coordinates
         viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
+        
+        // If in text input mode, start text input at this point
+        if (isTextInputMode) {
+            NSLog(@"Mouse clicked in text input mode at point: %@", NSStringFromPoint(viewPoint));
+            [self startTextInputAtPoint:viewPoint];
+            return;
+        }
+        
+        // Check for text annotations first
+        NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
+        if (textIndex >= 0) {
+            selectedTextIndex = textIndex;
+            selectedStrokeIndex = -1;
+            isStrokeSelected = NO;
+            isDraggingStroke = YES;
+            dragStartPoint = viewPoint;
+            [self setNeedsDisplay:YES];
+            return;
+        }
         
         // Attempt to find a stroke at this point
         BOOL foundStroke = NO;
@@ -525,19 +557,25 @@
         viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
         NSLog(@"DrawView: mouseDragged detected regular mouse event at point: %@", NSStringFromPoint(viewPoint));
         
-        // Handle dragging a selected stroke
-        if (isDraggingStroke && isStrokeSelected && selectedStrokeIndex >= 0) {
+        // Handle dragging a selected item
+        if (isDraggingStroke) {
             // Calculate the movement offset
             CGFloat dx = viewPoint.x - dragStartPoint.x;
             CGFloat dy = viewPoint.y - dragStartPoint.y;
             
-            // Apply the offset to the stroke
-            [self moveSelectedStroke:NSMakePoint(dx, dy)];
+            // Check if we're dragging text or stroke
+            if (selectedTextIndex >= 0) {
+                // Dragging text
+                [self moveSelectedText:NSMakePoint(dx, dy)];
+                NSLog(@"DrawView: Dragged text by offset (%f, %f)", dx, dy);
+            } else if (isStrokeSelected && selectedStrokeIndex >= 0) {
+                // Dragging stroke
+                [self moveSelectedStroke:NSMakePoint(dx, dy)];
+                NSLog(@"DrawView: Dragged stroke by offset (%f, %f)", dx, dy);
+            }
             
             // Update the drag start point for the next mouse dragged event
             dragStartPoint = viewPoint;
-            
-            NSLog(@"DrawView: Dragged stroke by offset (%f, %f)", dx, dy);
         }
     }
     
@@ -639,7 +677,8 @@
         // End any stroke dragging
         if (isDraggingStroke) {
             isDraggingStroke = NO;
-            NSLog(@"DrawView: Finished dragging stroke");
+            selectedTextIndex = -1;  // Clear text selection
+            NSLog(@"DrawView: Finished dragging");
         }
         
         // Clean up straight line path if it exists
@@ -655,9 +694,10 @@
 - (void)clear {
     // Save count for redo information
     NSInteger pathCount = [paths count];
+    NSInteger textCount = [textAnnotations count];
     
-    // Only save to undo stack if there are paths to save
-    if (pathCount > 0) {
+    // Only save to undo stack if there are paths or text to save
+    if (pathCount > 0 || textCount > 0) {
         // Make a deep copy of the current drawing state for undo/redo
         NSMutableArray *savedPaths = [[NSMutableArray alloc] initWithCapacity:pathCount];
         NSMutableArray *savedColors = [[NSMutableArray alloc] initWithCapacity:pathCount];
@@ -675,11 +715,17 @@
             [colorCopy release];
         }
         
+        // Save text annotations too
+        NSMutableArray *savedTextAnnotations = [textAnnotations mutableCopy];
+        NSMutableArray *savedTextColors = [textColors mutableCopy];
+        
         // Create a special clear operation container that holds the entire drawing state
         NSMutableDictionary *clearState = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                         savedPaths, @"paths",
                                         savedColors, @"colors",
                                         savedMarkers, @"markers",
+                                        savedTextAnnotations, @"textAnnotations",
+                                        savedTextColors, @"textColors",
                                         nil];
         
         // Store a single clear operation record in the undo stack
@@ -690,11 +736,15 @@
         [savedPaths release];
         [savedColors release];
         [savedMarkers release];
+        [savedTextAnnotations release];
+        [savedTextColors release];
         
         // Now clear the current state
         [paths removeAllObjects];
         [pathColors removeAllObjects];
         [strokeMarkers removeAllObjects];
+        [textAnnotations removeAllObjects];
+        [textColors removeAllObjects];
         
         NSLog(@"DrawView: Cleared drawing state - saved %ld paths for redo", (long)pathCount);
     }
@@ -844,11 +894,15 @@
 
 // Check if there's something to undo
 - (BOOL)canUndo {
-    return ([paths count] > 0 && [strokeMarkers count] > 0);
+    return ([paths count] > 0 && [strokeMarkers count] > 0) || [textAnnotations count] > 0;
 }
 
 // Check if there's something to redo
 - (BOOL)canRedo {
+    if ([undoTextAnnotations count] > 0) {
+        return YES;
+    }
+    
     if ([undoStrokeMarkers count] > 0) {
         id markerObject = [undoStrokeMarkers lastObject];
         
@@ -1163,44 +1217,73 @@
 
 // Undo the last complete stroke
 - (void)undo {
-    // Check if there are any paths to undo
+    // Check if there are any paths or text to undo
     if ([self canUndo]) {
-        // Get the marker for the last stroke
-        NSInteger markerIndex = [strokeMarkers count] - 1;
-        NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
-        NSInteger endIndex = [paths count] - 1;
-        NSInteger segmentCount = endIndex - startIndex + 1;
+        // Determine what to undo - prioritize text if it was added most recently
+        BOOL undoText = NO;
         
-        // Store the start index in the undo markers stack
-        [undoStrokeMarkers addObject:[NSNumber numberWithInteger:segmentCount]];
-        
-        // Move each path segment in the stroke to the undo stack (in reverse to maintain order)
-        for (NSInteger i = endIndex; i >= startIndex; i--) {
-            // Get the path and color at this index
-            NSBezierPath *pathToUndo = [[paths objectAtIndex:i] retain];
-            NSColor *colorToUndo = [[pathColors objectAtIndex:i] retain];
-            
-            // Add to undo stacks
-            [undoPaths addObject:pathToUndo];
-            [undoPathColors addObject:colorToUndo];
-            
-            // Release our retained copies
-            [pathToUndo release];
-            [colorToUndo release];
+        // Simple heuristic: if there's text and no strokes, undo text
+        // Or if there are both, undo text (since we don't track chronological order yet)
+        if ([textAnnotations count] > 0) {
+            undoText = YES;
         }
         
-        // Remove the segments from the current paths
-        NSRange removeRange = NSMakeRange(startIndex, segmentCount);
-        [paths removeObjectsInRange:removeRange];
-        [pathColors removeObjectsInRange:removeRange];
-        
-        // Remove the marker for this stroke
-        [strokeMarkers removeObjectAtIndex:markerIndex];
+        if (undoText && [textAnnotations count] > 0) {
+            // Undo the last text annotation
+            NSMutableDictionary *textToUndo = [[textAnnotations lastObject] retain];
+            NSColor *colorToUndo = [[textColors lastObject] retain];
+            
+            // Add to undo stacks
+            [undoTextAnnotations addObject:textToUndo];
+            [undoTextColors addObject:colorToUndo];
+            
+            // Remove from current
+            [textAnnotations removeLastObject];
+            [textColors removeLastObject];
+            
+            [textToUndo release];
+            [colorToUndo release];
+            
+            NSLog(@"DrawView: Undo performed, removed text annotation");
+        }
+        else if ([paths count] > 0 && [strokeMarkers count] > 0) {
+            // Get the marker for the last stroke
+            NSInteger markerIndex = [strokeMarkers count] - 1;
+            NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
+            NSInteger endIndex = [paths count] - 1;
+            NSInteger segmentCount = endIndex - startIndex + 1;
+            
+            // Store the start index in the undo markers stack
+            [undoStrokeMarkers addObject:[NSNumber numberWithInteger:segmentCount]];
+            
+            // Move each path segment in the stroke to the undo stack (in reverse to maintain order)
+            for (NSInteger i = endIndex; i >= startIndex; i--) {
+                // Get the path and color at this index
+                NSBezierPath *pathToUndo = [[paths objectAtIndex:i] retain];
+                NSColor *colorToUndo = [[pathColors objectAtIndex:i] retain];
+                
+                // Add to undo stacks
+                [undoPaths addObject:pathToUndo];
+                [undoPathColors addObject:colorToUndo];
+                
+                // Release our retained copies
+                [pathToUndo release];
+                [colorToUndo release];
+            }
+            
+            // Remove the segments from the current paths
+            NSRange removeRange = NSMakeRange(startIndex, segmentCount);
+            [paths removeObjectsInRange:removeRange];
+            [pathColors removeObjectsInRange:removeRange];
+            
+            // Remove the marker for this stroke
+            [strokeMarkers removeObjectAtIndex:markerIndex];
+            
+            NSLog(@"DrawView: Undo performed, removed stroke with %ld segments", (long)segmentCount);
+        }
         
         // Redraw
         [self setNeedsDisplay:YES];
-        
-        NSLog(@"DrawView: Undo performed, removed stroke with %ld segments", (long)segmentCount);
     } else {
         NSLog(@"DrawView: Nothing to undo");
     }
@@ -1213,6 +1296,28 @@
     
     // Check if there are any paths to redo
     if ([self canRedo]) {
+        // Check if we have text to redo first
+        if ([undoTextAnnotations count] > 0) {
+            // Redo the last text annotation
+            NSMutableDictionary *textToRedo = [[undoTextAnnotations lastObject] retain];
+            NSColor *colorToRedo = [[undoTextColors lastObject] retain];
+            
+            // Add back to current
+            [textAnnotations addObject:textToRedo];
+            [textColors addObject:colorToRedo];
+            
+            // Remove from undo stacks
+            [undoTextAnnotations removeLastObject];
+            [undoTextColors removeLastObject];
+            
+            [textToRedo release];
+            [colorToRedo release];
+            
+            NSLog(@"DrawView: Redo performed, restored text annotation");
+            [self setNeedsDisplay:YES];
+            return;
+        }
+        
         // Get the marker object for the stroke to redo
         id markerObject = [undoStrokeMarkers lastObject];
         
@@ -1227,6 +1332,8 @@
             NSArray *savedPaths = [clearState objectForKey:@"paths"];
             NSArray *savedColors = [clearState objectForKey:@"colors"];
             NSArray *savedMarkers = [clearState objectForKey:@"markers"];
+            NSArray *savedTextAnnotations = [clearState objectForKey:@"textAnnotations"];
+            NSArray *savedTextColors = [clearState objectForKey:@"textColors"];
             
             NSInteger pathCount = [savedPaths count];
             
@@ -1270,6 +1377,14 @@
             // Restore the markers
             for (NSNumber *marker in savedMarkers) {
                 [strokeMarkers addObject:marker];
+            }
+            
+            // Restore text annotations if they exist
+            if (savedTextAnnotations && savedTextColors) {
+                for (NSInteger i = 0; i < [savedTextAnnotations count]; i++) {
+                    [textAnnotations addObject:[savedTextAnnotations objectAtIndex:i]];
+                    [textColors addObject:[savedTextColors objectAtIndex:i]];
+                }
             }
             
             // Remove the clear state marker from the undo stack
@@ -1918,6 +2033,207 @@
         
         NSLog(@"DrawView: Saved colors to user defaults");
     }
+}
+
+#pragma mark - Text Annotation Methods
+
+- (void)enterTextInputMode {
+    if (isTextInputMode) {
+        // Toggle off if already in text mode
+        [self exitTextInputMode];
+    } else {
+        isTextInputMode = YES;
+        NSLog(@"Entered text input mode");
+        
+        // Change cursor to indicate text mode
+        [[NSCursor IBeamCursor] set];
+    }
+}
+
+- (void)exitTextInputMode {
+    isTextInputMode = NO;
+    if (isEditingText) {
+        [self finishTextInput];
+    }
+    NSLog(@"Exited text input mode");
+    
+    // Restore normal cursor
+    [[NSCursor arrowCursor] set];
+}
+
+- (void)startTextInputAtPoint:(NSPoint)point {
+    if (!isTextInputMode || isEditingText) return;
+    
+    // Store the position for the text
+    textInputPosition = point;
+    isEditingText = YES;
+    
+    // Create a text view for input
+    NSRect textFrame = NSMakeRect(point.x, point.y - 20, 300, 100);
+    activeTextView = [[NSTextView alloc] initWithFrame:textFrame];
+    
+    // Configure the text view
+    [activeTextView setBackgroundColor:[NSColor whiteColor]];
+    [activeTextView setDrawsBackground:YES];
+    [activeTextView setTextColor:strokeColor];
+    [activeTextView setFont:[NSFont systemFontOfSize:16]];
+    [activeTextView setRichText:NO];
+    [activeTextView setFieldEditor:NO];
+    [activeTextView setImportsGraphics:NO];
+    [activeTextView setAllowsUndo:NO];
+    [activeTextView setDelegate:(id<NSTextViewDelegate>)self];
+    [activeTextView setEditable:YES];
+    [activeTextView setSelectable:YES];
+    [activeTextView setVerticallyResizable:YES];
+    [activeTextView setHorizontallyResizable:YES];
+    [activeTextView setMinSize:NSMakeSize(100, 20)];
+    [activeTextView setMaxSize:NSMakeSize(500, 200)];
+    
+    // Add border for visibility during editing
+    [[activeTextView layer] setBorderWidth:1.0];
+    [[activeTextView layer] setBorderColor:[[strokeColor colorWithAlphaComponent:0.5] CGColor]];
+    [activeTextView setWantsLayer:YES];
+    
+    // Add to view
+    [self addSubview:activeTextView];
+    
+    // Temporarily allow the window to accept events for text input
+    [[self window] setIgnoresMouseEvents:NO];
+    
+    // Make the window key and order front to accept keyboard input
+    [[self window] makeKeyAndOrderFront:nil];
+    
+    // Use performSelector to delay setting first responder to avoid the exception
+    [self performSelector:@selector(focusTextView) withObject:nil afterDelay:0.1];
+    
+    NSLog(@"Started text input at point: %@", NSStringFromPoint(point));
+}
+
+- (void)focusTextView {
+    if (activeTextView && [[self window] isKeyWindow]) {
+        [[self window] makeFirstResponder:activeTextView];
+    }
+}
+
+- (void)finishTextInput {
+    if (!isEditingText || !activeTextView) return;
+    
+    NSString *text = [[activeTextView string] copy];
+    
+    if ([text length] > 0) {
+        // Create text annotation dictionary
+        NSMutableDictionary *annotation = [NSMutableDictionary dictionary];
+        [annotation setObject:text forKey:@"text"];
+        [annotation setObject:[NSValue valueWithPoint:textInputPosition] forKey:@"position"];
+        [annotation setObject:[NSFont systemFontOfSize:16] forKey:@"font"];
+        
+        // Add to arrays
+        [textAnnotations addObject:annotation];
+        [textColors addObject:strokeColor];
+        
+        // Clear redo stacks
+        [undoTextAnnotations removeAllObjects];
+        [undoTextColors removeAllObjects];
+        
+        NSLog(@"Added text annotation: %@", text);
+    }
+    
+    // Clean up
+    [activeTextView removeFromSuperview];
+    activeTextView = nil;
+    isEditingText = NO;
+    
+    // Restore window to ignore mouse events
+    [[self window] setIgnoresMouseEvents:YES];
+    
+    // Redraw to show the new text
+    [self setNeedsDisplay:YES];
+}
+
+- (void)cancelTextInput {
+    if (!isEditingText || !activeTextView) return;
+    
+    [activeTextView removeFromSuperview];
+    activeTextView = nil;
+    isEditingText = NO;
+    
+    // Restore window to ignore mouse events
+    [[self window] setIgnoresMouseEvents:YES];
+    
+    NSLog(@"Cancelled text input");
+}
+
+- (void)drawTextAnnotations {
+    for (NSUInteger i = 0; i < [textAnnotations count]; i++) {
+        NSDictionary *annotation = [textAnnotations objectAtIndex:i];
+        NSColor *color = [textColors objectAtIndex:i];
+        
+        NSString *text = [annotation objectForKey:@"text"];
+        NSPoint position = [[annotation objectForKey:@"position"] pointValue];
+        NSFont *font = [annotation objectForKey:@"font"];
+        
+        // Create attributes dictionary
+        NSDictionary *attributes = @{
+            NSFontAttributeName: font,
+            NSForegroundColorAttributeName: color
+        };
+        
+        // Draw the text
+        [text drawAtPoint:position withAttributes:attributes];
+    }
+}
+
+- (NSInteger)findTextAnnotationAtPoint:(NSPoint)point {
+    for (NSInteger i = [textAnnotations count] - 1; i >= 0; i--) {
+        NSDictionary *annotation = [textAnnotations objectAtIndex:i];
+        NSRect bounds = [self boundsForTextAnnotation:annotation];
+        
+        if (NSPointInRect(point, bounds)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+- (NSRect)boundsForTextAnnotation:(NSDictionary *)annotation {
+    NSString *text = [annotation objectForKey:@"text"];
+    NSPoint position = [[annotation objectForKey:@"position"] pointValue];
+    NSFont *font = [annotation objectForKey:@"font"];
+    
+    NSDictionary *attributes = @{NSFontAttributeName: font};
+    NSSize textSize = [text sizeWithAttributes:attributes];
+    
+    return NSMakeRect(position.x, position.y, textSize.width, textSize.height);
+}
+
+- (void)moveSelectedText:(NSPoint)offset {
+    if (selectedTextIndex < 0 || selectedTextIndex >= [textAnnotations count]) return;
+    
+    NSMutableDictionary *annotation = [textAnnotations objectAtIndex:selectedTextIndex];
+    NSPoint currentPosition = [[annotation objectForKey:@"position"] pointValue];
+    NSPoint newPosition = NSMakePoint(currentPosition.x + offset.x, currentPosition.y + offset.y);
+    
+    [annotation setObject:[NSValue valueWithPoint:newPosition] forKey:@"position"];
+    [self setNeedsDisplay:YES];
+}
+
+#pragma mark - NSTextViewDelegate
+
+- (BOOL)textView:(NSTextView *)textView doCommandBySelector:(SEL)selector {
+    if (selector == @selector(insertNewline:)) {
+        // Enter key pressed - finish text input
+        [self finishTextInput];
+        return YES;
+    } else if (selector == @selector(insertNewlineIgnoringFieldEditor:)) {
+        // Option-Enter pressed - insert soft line break
+        [textView insertText:@"\n" replacementRange:NSMakeRange([textView selectedRange].location, 0)];
+        return YES;
+    } else if (selector == @selector(cancelOperation:)) {
+        // Escape key pressed - cancel text input
+        [self cancelTextInput];
+        return YES;
+    }
+    return NO;
 }
 
 @end

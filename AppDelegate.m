@@ -142,6 +142,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
             BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
             BOOL isD = ([characters isEqualToString:@"D"] || [characters isEqualToString:@"d"]);
+            BOOL isT = ([characters isEqualToString:@"T"] || [characters isEqualToString:@"t"]);
             
             // Make sure the overlay window and drawing view are active
             [appDelegate.overlayWindow orderFront:nil];
@@ -237,12 +238,49 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                         [drawView toggleToNextColor];
                     }
                 }
+                // Handle text input mode toggle (Cmd+Option+Shift+T)
+                else if (isCommandDown && isOptionDown && isShiftDown && isT) {
+                    NSLog(@"EVENT TAP: Cmd+Option+Shift+T - text input mode toggle detected");
+                    if ([drawView respondsToSelector:@selector(enterTextInputMode)]) {
+                        [drawView enterTextInputMode];
+                    }
+                }
             }
             
             // CRITICAL: Return NULL to block the event COMPLETELY - no further processing by system
             return NULL;
         } else {
-            NSLog(@"EVENT TAP: Keyboard event not from Wacom tablet - passing through");
+            NSLog(@"EVENT TAP: Keyboard event not from Wacom tablet - checking for text input shortcut");
+            
+            // Check for text input mode toggle from regular keyboard (Cmd+Option+Shift+T)
+            NSUInteger flags = [nsEvent modifierFlags];
+            NSString *characters = [nsEvent charactersIgnoringModifiers];
+            
+            BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
+            BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
+            BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
+            BOOL isT = ([characters isEqualToString:@"T"] || [characters isEqualToString:@"t"]);
+            
+            if (isCommandDown && isOptionDown && isShiftDown && isT) {
+                NSLog(@"EVENT TAP: Cmd+Option+Shift+T from regular keyboard - text input mode toggle detected");
+                
+                // Get the draw view
+                DrawView *drawView = appDelegate.drawView;
+                if (!drawView) {
+                    TabletApplication *app = (TabletApplication *)NSApp;
+                    OverlayWindow *window = [app overlayWindow];
+                    if (window) {
+                        drawView = (DrawView *)[window contentView];
+                    }
+                }
+                
+                if (drawView && [drawView respondsToSelector:@selector(enterTextInputMode)]) {
+                    [drawView enterTextInputMode];
+                }
+                
+                // Block this shortcut from being processed by other apps
+                return NULL;
+            }
         }
     }
     // Handle key up events
@@ -259,6 +297,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             // In OS X 10.9, use the raw bit values
             BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
             BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
+            BOOL isT = ([characters isEqualToString:@"T"] || [characters isEqualToString:@"t"]);
             
             // Handle F14 key up (normal mode toggle off) - we need to check actual key codes
             // Since F14 key release might not match the same character representation
