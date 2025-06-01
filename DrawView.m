@@ -54,6 +54,7 @@
         isEditingText = NO;
         activeTextField = nil;
         selectedTextIndex = -1;
+        originalWindowLevel = NSScreenSaverWindowLevel;  // Initialize to default overlay window level
         
         // Make the view transparent to allow click-through
         [self setWantsLayer:YES];
@@ -308,6 +309,7 @@
     } else {
         // For regular mouse events, use the event's locationInWindow coordinates
         viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
+        NSLog(@"DrawView: mouseDown detected regular mouse event at point: %@, isDraggingStroke=%d, selectedTextIndex=%ld", NSStringFromPoint(viewPoint), isDraggingStroke, (long)selectedTextIndex);
         
         // No longer handle text input mode via mouse clicks - only via keyboard shortcut
         
@@ -676,9 +678,8 @@
             isDraggingStroke = NO;
             selectedTextIndex = -1;  // Clear text selection
             
-            // Ensure window loses focus and mouse events are properly ignored
-            [[self window] setIgnoresMouseEvents:YES];
-            [[self window] resignKeyWindow];
+            // Note: Window should already be ignoring mouse events during normal operation
+            // The event tap handles forwarding mouse events to us
             
             NSLog(@"DrawView: Finished dragging");
         }
@@ -2062,9 +2063,7 @@
     
     // Ensure window state is restored
     [[self window] setIgnoresMouseEvents:YES];
-    if (originalWindowLevel > 0) {
-        [[self window] setLevel:originalWindowLevel]; // Restore original window level if it was set
-    }
+    [[self window] setLevel:originalWindowLevel];  // Always restore the window level
     
     // Restore normal cursor
     [[NSCursor arrowCursor] set];
@@ -2103,7 +2102,7 @@
     [[self window] setIgnoresMouseEvents:NO];
     
     // Store the original window level
-    NSInteger originalLevel = [[self window] level];
+    originalWindowLevel = [[self window] level];
     
     // Temporarily lower window level to allow proper keyboard focus
     [[self window] setLevel:NSFloatingWindowLevel];
@@ -2114,8 +2113,6 @@
     // Make the window key and order front to accept keyboard input
     [[self window] makeKeyAndOrderFront:nil];
     
-    // Store original level for restoration
-    originalWindowLevel = originalLevel;
     
     // Use performSelector to delay setting first responder to avoid the exception
     [self performSelector:@selector(focusTextView) withObject:nil afterDelay:0.1];

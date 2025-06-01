@@ -87,14 +87,14 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         // Handle mouse events appropriately
         if (type == kCGEventLeftMouseDown) {
             // Forward the click to DrawView to check for strokes and handle selection
-            [drawView setValue:[NSNumber numberWithInteger:-1] forKey:@"selectedStrokeIndex"];
             [drawView mouseEvent:nsEvent];
             
-            // Check if a stroke was actually selected
-            BOOL wasSelected = [[drawView valueForKey:@"isStrokeSelected"] boolValue];
+            // Check if a stroke or text was actually selected
+            BOOL wasStrokeSelected = [[drawView valueForKey:@"isStrokeSelected"] boolValue];
+            BOOL isDragging = [[drawView valueForKey:@"isDraggingStroke"] boolValue];
             
-            if (wasSelected) {
-                // A stroke was selected, capture the event
+            if (wasStrokeSelected || isDragging) {
+                // A stroke or text was selected, capture the event
                 return NULL; // Return NULL to stop event propagation
             }
         }
