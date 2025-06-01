@@ -94,5 +94,6 @@
 - (void)drawTextAnnotations;
 - (void)enterTextInputMode;
 - (void)exitTextInputMode;
+- (void)resetToDefaults;
 
 @end

@@ -2440,4 +2440,40 @@
     [defaults synchronize];
 }
 
+- (void)resetToDefaults {
+    // Reset to default colors
+    NSColor *color1 = [NSColor redColor];
+    NSColor *color2 = [NSColor blueColor];
+    NSColor *color3 = [NSColor greenColor];
+    NSColor *color4 = [NSColor orangeColor];
+    NSColor *color5 = [NSColor purpleColor];
+    
+    [presetColors release];
+    presetColors = [[NSArray alloc] initWithObjects:color1, color2, color3, color4, color5, nil];
+    
+    // Reset current color index
+    currentColorIndex = 0;
+    self.strokeColor = color1;
+    
+    // Reset line width
+    self.lineWidth = 2.0;
+    
+    // Reset text size
+    textSize = 16.0;
+    
+    // Clear user defaults
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults removeObjectForKey:@"PresetColor1"];
+    [defaults removeObjectForKey:@"PresetColor2"];
+    [defaults removeObjectForKey:@"PresetColor3"];
+    [defaults removeObjectForKey:@"PresetColor4"];
+    [defaults removeObjectForKey:@"PresetColor5"];
+    [defaults removeObjectForKey:@"CurrentColorIndex"];
+    [defaults removeObjectForKey:@"WacomOverlayTextSize"];
+    [defaults synchronize];
+    
+    // Refresh the view
+    [self setNeedsDisplay:YES];
+}
+
 @end

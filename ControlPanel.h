@@ -23,5 +23,6 @@
 - (void)textSizeChanged:(id)sender;
 - (void)quitButtonClicked:(id)sender;
 - (void)presetColorChanged:(id)sender;
+- (void)resetToDefaultsClicked:(id)sender;
 
 @end

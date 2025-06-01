@@ -4,7 +4,7 @@
 @implementation ControlPanel
 
 - (id)initWithDrawView:(DrawView *)aDrawView {
-    NSRect frame = NSMakeRect(0, 0, 300, 210);  // Compact layout with left-aligned color wells
+    NSRect frame = NSMakeRect(0, 0, 300, 250);  // Compact layout with left-aligned color wells
     self = [super initWithContentRect:frame
                             styleMask:1 | 2 // NSTitledWindowMask | NSClosableWindowMask
                               backing:NSBackingStoreBuffered
@@ -178,7 +178,15 @@
         [contentView addSubview:preset5Label];
         [preset5Label release];
         
-        // Quit button no longer needed as it's in the menu bar now
+        // Add Reset to Defaults button
+        NSButton *resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(20, 10, 120, 25)];
+        [resetButton setTitle:@"Reset to Defaults"];
+        [resetButton setTarget:self];
+        [resetButton setAction:@selector(resetToDefaultsClicked:)];
+        [resetButton setButtonType:NSMomentaryPushInButton];
+        [resetButton setBezelStyle:NSRoundedBezelStyle];
+        [contentView addSubview:resetButton];
+        [resetButton release];
         
         // Center window on screen
         [self center];
@@ -270,6 +278,23 @@
     }
 }
 
+
+- (void)resetToDefaultsClicked:(id)sender {
+    // Reset DrawView to defaults
+    [drawView resetToDefaults];
+    
+    // Update UI controls to reflect the reset values
+    [colorWell setColor:[drawView strokeColor]];
+    [lineWidthSlider setDoubleValue:[drawView lineWidth]];
+    [textSizeSlider setDoubleValue:[drawView textSize]];
+    
+    // Update preset color wells
+    NSArray *presetColors = [drawView presetColors];
+    for (NSInteger i = 0; i < [presetColorWells count] && i < [presetColors count]; i++) {
+        NSColorWell *well = [presetColorWells objectAtIndex:i];
+        [well setColor:[presetColors objectAtIndex:i]];
+    }
+}
 
 - (void)quitButtonClicked:(id)sender {
     [NSApp terminate:self];
