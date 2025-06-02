@@ -295,11 +295,9 @@
         NSUInteger currentFlags = [NSEvent modifierFlags];
         BOOL shiftIsDown = (currentFlags & (1 << 17)) != 0; // NSShiftKeyMask in 10.9
         
-        // Update our shift key state
-        if (isShiftKeyDown != shiftIsDown) {
-            isShiftKeyDown = shiftIsDown;
-            NSLog(@"DrawView: Shift key detected as %@ during mouseDown", isShiftKeyDown ? @"DOWN" : @"UP");
-        }
+        // Always update our shift key state at the start of a new stroke
+        isShiftKeyDown = shiftIsDown;
+        NSLog(@"DrawView: Shift key state at mouseDown: %@", isShiftKeyDown ? @"DOWN" : @"UP");
         
         // Check if shift key is already down when starting a new stroke
         if (isShiftKeyDown) {
