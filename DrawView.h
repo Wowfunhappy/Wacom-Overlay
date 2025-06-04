@@ -87,6 +87,7 @@
 // Text annotation methods
 - (void)startTextInputAtPoint:(NSPoint)point;
 - (void)finishTextInput;
+- (void)finishTextInputAndCreateNewBelow;
 - (void)cancelTextInput;
 - (NSInteger)findTextAnnotationAtPoint:(NSPoint)point;
 - (NSRect)boundsForTextAnnotation:(NSDictionary *)annotation;

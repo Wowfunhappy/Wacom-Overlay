@@ -2331,6 +2331,49 @@
     [self setNeedsDisplay:YES];
 }
 
+- (void)finishTextInputAndCreateNewBelow {
+    if (!isEditingText || !activeTextField) return;
+    
+    NSString *text = [[activeTextField stringValue] copy];
+    NSPoint currentPosition = textInputPosition;
+    
+    if ([text length] > 0) {
+        // Create text annotation dictionary for current text
+        NSMutableDictionary *annotation = [NSMutableDictionary dictionary];
+        [annotation setObject:text forKey:@"text"];
+        [annotation setObject:[NSValue valueWithPoint:currentPosition] forKey:@"position"];
+        [annotation setObject:[NSFont systemFontOfSize:self.textSize] forKey:@"font"];
+        
+        // Add to arrays
+        [textAnnotations addObject:annotation];
+        [textColors addObject:strokeColor];
+        
+        // Clear redo stacks
+        [undoTextAnnotations removeAllObjects];
+        [undoTextColors removeAllObjects];
+        
+        NSLog(@"Added text annotation: %@", text);
+    }
+    
+    // Clean up current text field
+    [activeTextField removeFromSuperview];
+    [activeTextField release];
+    activeTextField = nil;
+    
+    // Calculate position for new text area below current one
+    // Use the current text size plus some line spacing
+    CGFloat lineHeight = self.textSize + 4; // Add 4px line spacing
+    NSPoint newPosition = NSMakePoint(currentPosition.x, currentPosition.y - lineHeight);
+    
+    // Create new text area below the current one
+    [self startTextInputAtPoint:newPosition];
+    
+    // Redraw to show the completed text
+    [self setNeedsDisplay:YES];
+    
+    [text release];
+}
+
 - (void)cancelTextInput {
     if (!isEditingText || !activeTextField) return;
     
@@ -2404,9 +2447,9 @@
 #pragma mark - NSTextFieldDelegate
 
 - (BOOL)control:(NSControl *)control textView:(NSTextView *)textView doCommandBySelector:(SEL)selector {
-    // Block any attempt at multiline input (Option+Enter, etc.)
     if (selector == @selector(insertNewlineIgnoringFieldEditor:)) {
-        // Option+Enter pressed - ignore it completely for single-line only
+        // Alt+Enter pressed - finalize current text area and create new one below
+        [self finishTextInputAndCreateNewBelow];
         return YES;
     }
     return NO;
