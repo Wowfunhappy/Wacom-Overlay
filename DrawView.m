@@ -759,6 +759,12 @@
             [NSCursor setHiddenUntilMouseMoves:NO];
         }
     }
+    
+    // Update SetsCursorInBackground based on current conditions
+    TabletApplication *app = (TabletApplication *)[NSApplication sharedApplication];
+    if ([app respondsToSelector:@selector(updateSetsCursorInBackground)]) {
+        [app updateSetsCursorInBackground];
+    }
 }
 
 - (void)clear {

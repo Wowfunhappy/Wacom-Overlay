@@ -29,5 +29,6 @@ OSStatus CGSSetConnectionProperty(void *connection, void *ownerConnection, CFStr
 - (void)updateCursorWithColor:(NSColor *)color;
 - (NSCursor *)createCursorWithColor:(NSColor *)color;
 - (void)registerForColorNotifications;
+- (void)updateSetsCursorInBackground;
 
 @end

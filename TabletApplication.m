@@ -175,6 +175,9 @@
             [customCursor set];
             isPenInProximity = YES;
             
+            // Update SetsCursorInBackground now that pen is in proximity
+            [self updateSetsCursorInBackground];
+            
             // Start timer to periodically enforce custom cursor
             if (cursorCheckTimer == nil) {
                 cursorCheckTimer = [NSTimer scheduledTimerWithTimeInterval:0.1 // 100ms interval
@@ -191,6 +194,9 @@
             NSLog(@"Restoring default cursor - pen leaving proximity");
             [defaultCursor set];
             isPenInProximity = NO;
+            
+            // Update SetsCursorInBackground now that pen is out of proximity
+            [self updateSetsCursorInBackground];
             
             // Stop the cursor check timer
             if (cursorCheckTimer != nil) {
@@ -262,14 +268,47 @@
     // Create the initial custom cursor
     customCursor = [self createCursorWithColor:currentCursorColor];
     
-    // Enable setting cursor in background when app is not focused
-    // This uses an undocumented system call to allow cursor setting when not in foreground
+    // Initially don't enable SetsCursorInBackground - it will be enabled conditionally
+    NSLog(@"Custom cursor setup complete - SetsCursorInBackground will be enabled conditionally");
+}
+
+- (void)updateSetsCursorInBackground {
+    // Check if pen is in proximity
+    BOOL shouldEnable = isPenInProximity;
+    
+    // If pen is not in proximity, check if mouse is over a draggable stroke
+    if (!shouldEnable && overlayWindow != nil) {
+        DrawView *drawView = (DrawView *)[overlayWindow contentView];
+        
+        // Get current mouse position
+        NSPoint screenPoint = [NSEvent mouseLocation];
+        NSPoint viewPoint = [drawView convertScreenPointToView:screenPoint];
+        
+        // Check if mouse is over a stroke or text that can be dragged
+        if ([drawView respondsToSelector:@selector(findStrokeAtPointForSelection:)]) {
+            NSInteger strokeIndex = [drawView findStrokeAtPointForSelection:viewPoint];
+            if (strokeIndex >= 0) {
+                shouldEnable = YES;
+            }
+        }
+        
+        // Also check for text annotations
+        if (!shouldEnable && [drawView respondsToSelector:@selector(findTextAnnotationAtPoint:)]) {
+            NSInteger textIndex = [drawView findTextAnnotationAtPoint:viewPoint];
+            if (textIndex >= 0) {
+                shouldEnable = YES;
+            }
+        }
+    }
+    
+    // Enable or disable SetsCursorInBackground based on conditions
     void *connection = CGSDefaultConnectionForThread();
     if (connection) {
         CFStringRef propertyString = CFSTR("SetsCursorInBackground");
-        CFBooleanRef boolVal = kCFBooleanTrue;
+        CFBooleanRef boolVal = shouldEnable ? kCFBooleanTrue : kCFBooleanFalse;
         CGSSetConnectionProperty(connection, connection, propertyString, boolVal);
-        NSLog(@"Enabled SetsCursorInBackground for custom cursor visibility when app loses focus");
+        NSLog(@"SetsCursorInBackground %@ (pen in proximity: %d)", 
+              shouldEnable ? @"enabled" : @"disabled", isPenInProximity);
     } else {
         NSLog(@"Warning: Could not get CGS connection for setting cursor in background");
     }
@@ -285,15 +324,10 @@
         // Forcibly set the cursor back to our custom one
         [customCursor set];
         
-        // Every few seconds, reapply the CGS connection property
+        // Every few seconds, update the cursor background property based on current conditions
         static int counter = 0;
-        if (++counter % 10 == 0) { // Every ~1 seconds (20 * 0.1s = 2s)
-            void *connection = CGSDefaultConnectionForThread();
-            if (connection) {
-                CFStringRef propertyString = CFSTR("SetsCursorInBackground");
-                CFBooleanRef boolVal = kCFBooleanTrue;
-                CGSSetConnectionProperty(connection, connection, propertyString, boolVal);
-            }
+        if (++counter % 10 == 0) { // Every ~1 seconds (10 * 0.1s = 1s)
+            [self updateSetsCursorInBackground];
         }
     }
     // If we've entered passthrough mode while pen is in proximity, restore default cursor
