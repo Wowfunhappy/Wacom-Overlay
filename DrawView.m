@@ -1657,6 +1657,12 @@
 }
 
 - (void)toggleToNextColor {
+    // Check if presetColors is empty or nil
+    if (!presetColors || [presetColors count] == 0) {
+        NSLog(@"DrawView: No preset colors available for toggling");
+        return;
+    }
+    
     // Increment the color index
     currentColorIndex = (currentColorIndex + 1) % [presetColors count];
     
@@ -1682,7 +1688,7 @@
     for (NSWindow *window in windows) {
         if ([[window className] isEqualToString:@"ControlPanel"]) {
             NSColorWell *colorWell = [window valueForKey:@"colorWell"];
-            if (colorWell) {
+            if (colorWell && self.strokeColor) {
                 [colorWell setColor:self.strokeColor];
             }
             break;
