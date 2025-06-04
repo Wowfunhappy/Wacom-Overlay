@@ -144,6 +144,9 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             BOOL isD = ([characters isEqualToString:@"D"] || [characters isEqualToString:@"d"]);
             BOOL isT = ([characters isEqualToString:@"T"] || [characters isEqualToString:@"t"]);
             
+            // Track whether we handled this event
+            BOOL eventHandled = NO;
+            
             // Make sure the overlay window and drawing view are active
             [appDelegate.overlayWindow orderFront:nil];
             
@@ -165,6 +168,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                     if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
                         [drawView toggleToNextColor];
                     }
+                    eventHandled = YES;
                 }
                 // Handle F14 to temporarily act as a normal mouse while pressed
                 else if ([nsEvent keyCode] == 107) { // F14 key code
@@ -184,8 +188,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                         }
                     }
                     
-                    // Block this key event from propagating to the system
-                    return NULL;
+                    eventHandled = YES;
                 } 
                 // Handle undo (Cmd+Z)
                 else if (isCommandDown && !isShiftDown && isZ) {
@@ -220,6 +223,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                             [drawView undo];
                         }
                     }
+                    eventHandled = YES;
                 }
                 // Handle redo (Cmd+Shift+Z)
                 else if (isCommandDown && isShiftDown && isZ) {
@@ -230,6 +234,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                             [drawView redo];
                         }
                     }
+                    eventHandled = YES;
                 }
                 // Handle color toggle (Cmd+D)
                 else if (isCommandDown && isD && !isShiftDown) {
@@ -237,6 +242,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                     if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
                         [drawView toggleToNextColor];
                     }
+                    eventHandled = YES;
                 }
                 // Handle text input mode toggle (Cmd+Option+Shift+T)
                 else if (isCommandDown && isOptionDown && isShiftDown && isT) {
@@ -244,11 +250,18 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                     if ([drawView respondsToSelector:@selector(enterTextInputMode)]) {
                         [drawView enterTextInputMode];
                     }
+                    eventHandled = YES;
                 }
             }
             
-            // CRITICAL: Return NULL to block the event COMPLETELY - no further processing by system
-            return NULL;
+            // Only block the event if we actually handled it
+            if (eventHandled) {
+                NSLog(@"EVENT TAP: Blocking handled keyboard event from Wacom tablet");
+                return NULL;
+            } else {
+                NSLog(@"EVENT TAP: Passing through unhandled keyboard event from Wacom tablet");
+                return event;
+            }
         } else {
             NSLog(@"EVENT TAP: Keyboard event not from Wacom tablet - checking for text input shortcut");
             
@@ -299,6 +312,9 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
             BOOL isT = ([characters isEqualToString:@"T"] || [characters isEqualToString:@"t"]);
             
+            // Track whether we handled this event
+            BOOL eventHandled = NO;
+            
             // Handle F14 key up (normal mode toggle off) - we need to check actual key codes
             // Since F14 key release might not match the same character representation
             NSUInteger keyCode = [nsEvent keyCode];
@@ -318,7 +334,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                     }
                 }
                 
-                return NULL; // Block this keyup from propagating
+                eventHandled = YES;
             }
             // Check if this is the undo key releasing
             else if (isZ && !isShiftDown) {
@@ -336,10 +352,18 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                 // Release the stored time
                 [appDelegate.lastUndoKeyTime release];
                 appDelegate.lastUndoKeyTime = nil;
+                
+                eventHandled = YES;
             }
             
-            // Block the key up event from propagating
-            return NULL;
+            // Only block the event if we actually handled it
+            if (eventHandled) {
+                NSLog(@"EVENT TAP: Blocking handled key up event from Wacom tablet");
+                return NULL;
+            } else {
+                NSLog(@"EVENT TAP: Passing through unhandled key up event from Wacom tablet");
+                return event;
+            }
         }
     }
     
