@@ -427,21 +427,45 @@
             if (!hasLastErasePoint) {
                 lastErasePoint = viewPoint;
                 hasLastErasePoint = YES;
+                // Erase at the initial point
+                NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
+                if (textIndex >= 0) {
+                    [self eraseTextAtPoint:viewPoint];
+                } else {
+                    [self eraseStrokeAtPoint:viewPoint];
+                }
             } else {
                 // Calculate distance from last erase point
                 CGFloat dx = viewPoint.x - lastErasePoint.x;
                 CGFloat dy = viewPoint.y - lastErasePoint.y;
                 CGFloat distance = sqrt(dx*dx + dy*dy);
                 
-                // Only process erase if we've moved enough distance (to avoid rapid erasures)
-                // Reduced from 10.0 to 2.0 for more responsive erasing
-                if (distance > 2.0) {
-                    // First try to erase text at this point
+                // Interpolate between last point and current point to ensure no strokes are missed
+                if (distance > 1.0) {
+                    NSInteger steps = (NSInteger)ceil(distance);
+                    for (NSInteger i = 1; i <= steps; i++) {
+                        CGFloat t = (CGFloat)i / (CGFloat)steps;
+                        NSPoint interpolatedPoint = NSMakePoint(
+                            lastErasePoint.x + t * dx,
+                            lastErasePoint.y + t * dy
+                        );
+                        
+                        // First try to erase text at this point
+                        NSInteger textIndex = [self findTextAnnotationAtPoint:interpolatedPoint];
+                        if (textIndex >= 0) {
+                            [self eraseTextAtPoint:interpolatedPoint];
+                        } else {
+                            // If no text found, try to erase stroke
+                            [self eraseStrokeAtPoint:interpolatedPoint];
+                        }
+                    }
+                    lastErasePoint = viewPoint;
+                } else {
+                    // Even for small movements, still erase at current point
                     NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
                     if (textIndex >= 0) {
                         [self eraseTextAtPoint:viewPoint];
                     } else {
-                        // If no text found, try to erase stroke
                         [self eraseStrokeAtPoint:viewPoint];
                     }
                     lastErasePoint = viewPoint;
