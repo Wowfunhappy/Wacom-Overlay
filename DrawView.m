@@ -2,6 +2,35 @@
 #import "TabletEvents.h"
 #import "TabletApplication.h"
 
+// Custom text field that properly handles ESC key
+@interface EscapeHandlingTextField : NSTextField
+@property (nonatomic, assign) DrawView *drawView;
+@end
+
+@implementation EscapeHandlingTextField
+
+- (void)keyDown:(NSEvent *)event {
+    if ([event keyCode] == 53) { // ESC key
+        if (self.drawView) {
+            [self.drawView cancelTextInput];
+            return;
+        }
+    }
+    [super keyDown:event];
+}
+
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+    if ([event keyCode] == 53) { // ESC key
+        if (self.drawView) {
+            [self.drawView cancelTextInput];
+            return YES;
+        }
+    }
+    return [super performKeyEquivalent:event];
+}
+
+@end
+
 @implementation DrawView
 
 @synthesize lineWidth;
@@ -2236,7 +2265,8 @@
     CGFloat textFieldHeight = self.textSize + 8; // Add some padding to the font size
     NSRect textFrame = NSMakeRect(point.x, point.y, 50, textFieldHeight);
     
-    activeTextField = [[NSTextField alloc] initWithFrame:textFrame];
+    activeTextField = [[EscapeHandlingTextField alloc] initWithFrame:textFrame];
+    [(EscapeHandlingTextField *)activeTextField setDrawView:self];
     [activeTextField setBackgroundColor:[NSColor clearColor]];
     [activeTextField setDrawsBackground:NO];
     [activeTextField setBordered:NO];
