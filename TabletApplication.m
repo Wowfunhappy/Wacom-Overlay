@@ -33,33 +33,19 @@
         [self handleProximityEvent:event];
     }];
     
-    // Setup a global monitor for tablet pointer events (for erasing)
-    // Use legacy constants for OS X 10.9
-    NSEventMask mouseEventMask = (1 << 1) |  // NSLeftMouseDown
-                                 (1 << 6) |  // NSLeftMouseDragged 
-                                 (1 << 2) |  // NSLeftMouseUp
-                                 (1 << 5);   // NSMouseMoved
+    // IMPORTANT: We should NOT use a global monitor for tablet pointer events
+    // The event tap in AppDelegate already handles these and can properly block them
+    // Having duplicate handling can cause events to "leak through"
     
-    globalTabletEventMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:mouseEventMask
+    // Only monitor mouse moved events for cursor changes
+    NSEventMask mouseMovedMask = (1 << 5);   // NSMouseMoved only
+    
+    globalTabletEventMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:mouseMovedMask
                                                  handler:^(NSEvent *event) {
         NSInteger eventType = [event type];
         
-        // Handle tablet events for drawing
-        // Note: isTabletPointerEvent will return false when F14 is pressed due to our override
-        if ([event isTabletPointerEvent]) {
-            NSLog(@"TabletApplication: Global event monitor caught tablet event");
-            
-            // Get draw view from our overlay window
-            if (overlayWindow != nil) {
-                DrawView *drawView = (DrawView *)[overlayWindow contentView];
-                
-                // Forward events to draw view, which will handle the erasing based on the erasing state
-                // We need to forward both regular and eraser events to maintain proper state
-                [drawView mouseEvent:event];
-            }
-        }
-        // Handle mouse moved events for cursor changes (even if not tablet events)
-        else if (eventType == 5) { // NSMouseMoved
+        // Only handle non-tablet mouse moved events for cursor management
+        if (eventType == 5 && ![event isTabletPointerEvent]) { // NSMouseMoved
             // Get draw view from our overlay window
             if (overlayWindow != nil) {
                 DrawView *drawView = (DrawView *)[overlayWindow contentView];
