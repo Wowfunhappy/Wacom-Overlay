@@ -22,6 +22,7 @@ $(APP_DIR): $(EXECUTABLE_NAME)
 	mkdir -p $(RESOURCES_DIR)
 	cp $(EXECUTABLE_NAME) $(MACOS_DIR)/
 	cp Info.plist $(CONTENTS_DIR)/Info.plist
+	sed -i '' 's/<string>[0-9][0-9][0-9][0-9]\.[0-9][0-9]\.[0-9][0-9]<\/string>/<string>'$$(date +%Y.%m.%d)'<\/string>/' $(CONTENTS_DIR)/Info.plist
 	cp menuIcon.png $(RESOURCES_DIR)/
 	cp menuIcon@2x.png $(RESOURCES_DIR)/
 
