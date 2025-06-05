@@ -310,7 +310,6 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             // In OS X 10.9, use the raw bit values
             BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
             BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
-            BOOL isT = ([characters isEqualToString:@"T"] || [characters isEqualToString:@"t"]);
             
             // Track whether we handled this event
             BOOL eventHandled = NO;

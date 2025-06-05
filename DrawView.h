@@ -77,6 +77,7 @@
 - (NSPoint)smoothPoint:(NSPoint)point;
 - (void)clearSmoothingBuffer;
 - (NSInteger)findStrokeAtPoint:(NSPoint)point;
+- (NSInteger)findStrokeAtPointForSelection:(NSPoint)point;
 - (void)moveSelectedStroke:(NSPoint)offset;
 - (BOOL)shouldAllowMouseEvent:(NSEvent *)event atPoint:(NSPoint)point;
 - (void)findRelatedStrokes:(NSInteger)strokeIndex;

@@ -34,11 +34,17 @@
 @implementation DrawView
 
 @synthesize lineWidth;
+@synthesize strokeColor;
 @synthesize erasing = mErasing;
 @synthesize currentColorIndex;
 @synthesize smoothingLevel;
 @synthesize enableSmoothing;
 @dynamic presetColors;
+
+// Custom getter for strokeColor
+- (NSColor *)strokeColor {
+    return strokeColor;
+}
 
 // Custom setter for strokeColor to ensure cursor color updates
 - (void)setStrokeColor:(NSColor *)color {
