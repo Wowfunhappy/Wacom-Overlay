@@ -448,7 +448,11 @@
                 
                 // Interpolate between last point and current point to ensure no strokes are missed
                 if (distance > 1.0) {
-                    NSInteger steps = (NSInteger)ceil(distance);
+                    // Limit the number of interpolation steps to prevent performance issues
+                    // Increased from 10 to 50 to better catch thin strokes
+                    NSInteger maxSteps = 50;
+                    NSInteger steps = MIN((NSInteger)ceil(distance), maxSteps);
+                    
                     for (NSInteger i = 1; i <= steps; i++) {
                         CGFloat t = (CGFloat)i / (CGFloat)steps;
                         NSPoint interpolatedPoint = NSMakePoint(
@@ -477,6 +481,8 @@
                     lastErasePoint = viewPoint;
                 }
             }
+            // Batch redraw for erasing operations
+            [self setNeedsDisplay:YES];
             return;
         }
         
@@ -1251,8 +1257,9 @@
         // Remove the marker for this stroke
         [strokeMarkers removeObjectAtIndex:markerIndex];
         
-        // Redraw
-        [self setNeedsDisplay:YES];
+        // Don't redraw immediately during dragging - let mouseDragged handle batch redraws
+        // This prevents excessive redraws during rapid erasing
+        // [self setNeedsDisplay:YES];
         
         NSLog(@"DrawView: Erased stroke with %ld segments", (long)segmentCount);
     } else {
