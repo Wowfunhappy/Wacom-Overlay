@@ -41,6 +41,13 @@ static BOOL g_handledByEventTap = NO;
 static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *userInfo) {
     AppDelegate *appDelegate = (AppDelegate *)userInfo;
     
+    // Check if the event tap was disabled by timeout or system
+    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+        NSLog(@"WARNING: Event tap was disabled! Re-enabling...");
+        CGEventTapEnable(appDelegate->eventTap, true);
+        return event;
+    }
+    
     // Reset handled flag for each new event
     g_handledByEventTap = NO;
     
