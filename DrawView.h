@@ -19,11 +19,6 @@
     NSArray *presetColors;
     NSInteger currentColorIndex;
     
-    // Smoothing related variables
-    NSMutableArray *pointBuffer;
-    NSInteger smoothingLevel;
-    BOOL enableSmoothing;
-    
     // Stroke selection and dragging variables
     NSInteger selectedStrokeIndex;
     BOOL isStrokeSelected;
@@ -67,8 +62,6 @@
 @property (nonatomic, assign) BOOL erasing;
 @property (nonatomic, readonly) NSArray *presetColors;
 @property (nonatomic, assign) NSInteger currentColorIndex;
-@property (nonatomic, assign) NSInteger smoothingLevel;
-@property (nonatomic, assign) BOOL enableSmoothing;
 
 - (void)clear;
 - (void)mouseEvent:(NSEvent *)event;
@@ -84,8 +77,6 @@
 - (void)resetEraseTracking;
 - (void)toggleToNextColor;
 - (void)setPresetColorAtIndex:(NSInteger)index toColor:(NSColor *)color;
-- (NSPoint)smoothPoint:(NSPoint)point;
-- (void)clearSmoothingBuffer;
 - (NSInteger)findStrokeAtPoint:(NSPoint)point;
 - (NSInteger)findStrokeAtPointForSelection:(NSPoint)point;
 - (void)moveSelectedStroke:(NSPoint)offset;

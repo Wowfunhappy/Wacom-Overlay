@@ -37,8 +37,6 @@
 @synthesize strokeColor;
 @synthesize erasing = mErasing;
 @synthesize currentColorIndex;
-@synthesize smoothingLevel;
-@synthesize enableSmoothing;
 @dynamic presetColors;
 
 // Custom getter for strokeColor
@@ -90,11 +88,6 @@
         mErasing = NO;
         hasLastErasePoint = NO;
         lastErasePoint = NSZeroPoint;
-        
-        // Initialize smoothing with maximum level
-        pointBuffer = [[NSMutableArray alloc] init];
-        self.smoothingLevel = 20;  // Maximum smoothing level for neatest handwriting
-        self.enableSmoothing = YES;  // Always enabled
         
         // Initialize stroke selection and dragging variables
         selectedStrokeIndex = -1;
@@ -331,14 +324,8 @@
             return;
         }
         
-        // Clear the smoothing buffer at the start of a new stroke
-        [self clearSmoothingBuffer];
-        
-        // Apply smoothing to the starting point (adds it to buffer)
-        NSPoint smoothedPoint = [self smoothPoint:viewPoint];
-        
         // Store the starting point for potential straight line drawing
-        straightLineStartPoint = smoothedPoint;
+        straightLineStartPoint = viewPoint;
         
         // Clean up any existing straight line path
         if (straightLinePath) {
@@ -375,8 +362,8 @@
             [straightLinePath setLineJoinStyle:NSRoundLineJoinStyle];
             
             // Draw a straight line from the start point to itself initially
-            [straightLinePath moveToPoint:smoothedPoint];
-            [straightLinePath lineToPoint:smoothedPoint];
+            [straightLinePath moveToPoint:viewPoint];
+            [straightLinePath lineToPoint:viewPoint];
         } else {
             // Start a new path for normal drawing
             currentPath = [[NSBezierPath bezierPath] retain];
@@ -385,10 +372,10 @@
             [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
             
             // Start the path
-            [currentPath moveToPoint:smoothedPoint];
+            [currentPath moveToPoint:viewPoint];
         }
         
-        lastPoint = smoothedPoint;
+        lastPoint = viewPoint;
         
         // Add a marker for the start of a new stroke
         // We'll record the current path count at the beginning of a stroke
@@ -479,9 +466,6 @@
             return;
         }
         
-        // Apply smoothing to the point
-        NSPoint smoothedPoint = [self smoothPoint:viewPoint];
-        
         // Check current modifier flags to detect shift key
     NSUInteger currentFlags = [NSEvent modifierFlags];
     BOOL shiftIsDown = (currentFlags & (1 << 17)) != 0; // NSShiftKeyMask in 10.9
@@ -491,7 +475,7 @@
         // If shift was just pressed, store current point as the straight line start
         if (shiftIsDown) {
             // Update the starting point to current position (not original pen down)
-            straightLineStartPoint = smoothedPoint;
+            straightLineStartPoint = viewPoint;
             
             // Store the current line width - we'll use this for the straight line
             if ([event pressure] > 0.0) {
@@ -518,7 +502,7 @@
                 
                 // Create the straight line segment
                 [segmentPath moveToPoint:straightLineStartPoint];
-                [segmentPath lineToPoint:smoothedPoint];
+                [segmentPath lineToPoint:viewPoint];
                 
                 // Add this segment to our collection
                 [paths addObject:segmentPath];
@@ -545,7 +529,7 @@
                 [currentPath setLineWidth:lineWidth];
                 [currentPath setLineCapStyle:NSRoundLineCapStyle];
                 [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
-                [currentPath moveToPoint:smoothedPoint];
+                [currentPath moveToPoint:viewPoint];
             }
         }
         
@@ -573,10 +557,10 @@
             
             // Draw a straight line from the start point to the current point
             [straightLinePath moveToPoint:straightLineStartPoint];
-            [straightLinePath lineToPoint:smoothedPoint];
+            [straightLinePath lineToPoint:viewPoint];
             
             // Save current point as last point (even though we're not adding segments)
-            lastPoint = smoothedPoint;
+            lastPoint = viewPoint;
             
             // Force a redraw to show the preview
             [self setNeedsDisplay:YES];
@@ -587,8 +571,8 @@
         // Normal drawing mode - if we have a current path, add a line to it
         if (currentPath) {
             // Calculate distance between last point and current point
-            CGFloat dx = smoothedPoint.x - lastPoint.x;
-            CGFloat dy = smoothedPoint.y - lastPoint.y;
+            CGFloat dx = viewPoint.x - lastPoint.x;
+            CGFloat dy = viewPoint.y - lastPoint.y;
             CGFloat distance = sqrt(dx*dx + dy*dy);
             
             // Use pressure if available to adjust line width for this segment
@@ -628,7 +612,7 @@
             }
             
             // Update last point for next segment
-            lastPoint = smoothedPoint;
+            lastPoint = viewPoint;
             
             NSLog(@"DrawView: Added %ld interpolated segments, distance: %f", (long)numSegments, distance);
         }
@@ -690,8 +674,6 @@
             // Get the current point
             NSPoint screenPoint = [NSEvent mouseLocation];
             NSPoint viewPoint = [self convertScreenPointToView:screenPoint];
-            NSPoint smoothedPoint = [self smoothPoint:viewPoint];
-            
             // Create a segment path for the straight line
             NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
             [segmentPath setLineCapStyle:NSRoundLineCapStyle];
@@ -702,7 +684,7 @@
             
             // Create the straight line segment
             [segmentPath moveToPoint:straightLineStartPoint];
-            [segmentPath lineToPoint:smoothedPoint];
+            [segmentPath lineToPoint:viewPoint];
             
             // Add this segment to our collection
             [paths addObject:segmentPath];
@@ -726,11 +708,9 @@
             
             NSLog(@"DrawView: Completed straight line from %@ to %@", 
                   NSStringFromPoint(straightLineStartPoint), 
-                  NSStringFromPoint(smoothedPoint));
+                  NSStringFromPoint(viewPoint));
         }
         else {
-            // Clear the smoothing buffer at the end of a stroke
-            [self clearSmoothingBuffer];
             
             // Release the current path as we now use individual segments
             if (currentPath) {
@@ -926,8 +906,6 @@
             // We need the current mouse position
             NSPoint currentPoint = [NSEvent mouseLocation];
             NSPoint viewPoint = [self convertScreenPointToView:currentPoint];
-            NSPoint smoothedPoint = [self smoothPoint:viewPoint];
-            
             // Create a segment path for the straight line
             NSBezierPath *segmentPath = [[NSBezierPath bezierPath] retain];
             [segmentPath setLineCapStyle:NSRoundLineCapStyle];
@@ -936,7 +914,7 @@
             
             // Create the straight line segment
             [segmentPath moveToPoint:straightLineStartPoint];
-            [segmentPath lineToPoint:smoothedPoint];
+            [segmentPath lineToPoint:viewPoint];
             
             // Add this segment to our collection
             [paths addObject:segmentPath];
@@ -963,7 +941,7 @@
             [currentPath setLineWidth:lineWidth];
             [currentPath setLineCapStyle:NSRoundLineCapStyle];
             [currentPath setLineJoinStyle:NSRoundLineJoinStyle];
-            [currentPath moveToPoint:smoothedPoint];
+            [currentPath moveToPoint:viewPoint];
             
             // Make sure the view redraws
             [self setNeedsDisplay:YES];
@@ -1798,7 +1776,6 @@
     }
     [strokeColor release];
     [presetColors release];
-    [pointBuffer release];
     [relatedStrokeIndices release];
     
     // Clean up cache
@@ -1810,54 +1787,6 @@
     [super dealloc];
 }
 
-- (NSPoint)smoothPoint:(NSPoint)point {
-    // If smoothing is disabled, return the original point
-    if (!self.enableSmoothing || self.smoothingLevel < 1) {
-        return point;
-    }
-    
-    // Add the new point to the buffer
-    [pointBuffer addObject:[NSValue valueWithPoint:point]];
-    
-    // Determine how many points to use for smoothing
-    NSInteger bufferSize = smoothingLevel;
-    
-    // Keep buffer from growing too large by removing oldest points
-    while ([pointBuffer count] > bufferSize) {
-        [pointBuffer removeObjectAtIndex:0];
-    }
-    
-    // If we don't have enough points yet, just return the current one
-    if ([pointBuffer count] < 2) {
-        return point;
-    }
-    
-    // Calculate a weighted average of the points
-    NSPoint smoothedPoint = NSZeroPoint;
-    CGFloat totalWeight = 0.0;
-    
-    // Use a basic weights array with more emphasis on recent points
-    for (NSInteger i = 0; i < [pointBuffer count]; i++) {
-        NSPoint pt = [[pointBuffer objectAtIndex:i] pointValue];
-        CGFloat weight = (i + 1.0); // Linear weighting: newer points have higher weight
-        
-        smoothedPoint.x += pt.x * weight;
-        smoothedPoint.y += pt.y * weight;
-        totalWeight += weight;
-    }
-    
-    // Normalize the smoothed point
-    if (totalWeight > 0) {
-        smoothedPoint.x /= totalWeight;
-        smoothedPoint.y /= totalWeight;
-    }
-    
-    return smoothedPoint;
-}
-
-- (void)clearSmoothingBuffer {
-    [pointBuffer removeAllObjects];
-}
 
 // Removed debug visualization method
 
