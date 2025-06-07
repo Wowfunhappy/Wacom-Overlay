@@ -49,6 +49,16 @@
     NSPoint textInputPosition;
     NSInteger originalWindowLevel;
     CGFloat textSize;
+    
+    // Performance caching variables
+    CGLayerRef cachedStrokesLayer;
+    BOOL cacheNeedsUpdate;
+    NSInteger lastCachedStrokeCount;
+    
+    // Progressive caching for active strokes
+    CGLayerRef activeStrokeCache;
+    NSInteger lastCachedActiveSegments;
+    NSInteger activeStrokeCacheThreshold;
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
@@ -97,5 +107,10 @@
 - (void)enterTextInputMode;
 - (void)exitTextInputMode;
 - (void)resetToDefaults;
+
+// Performance caching methods
+- (void)invalidateStrokeCache;
+- (void)updateStrokeCache;
+- (void)drawCachedStrokes;
 
 @end

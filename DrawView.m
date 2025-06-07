@@ -126,6 +126,11 @@
                                               name:kProximityNotification
                                               object:nil];
         
+        // Initialize performance caching
+        cachedStrokesLayer = NULL;
+        cacheNeedsUpdate = YES;
+        lastCachedStrokeCount = 0;
+        
         NSLog(@"DrawView initialized with frame: %@", NSStringFromRect(frame));
     }
     return self;
@@ -136,13 +141,14 @@
     [[NSColor clearColor] set];
     NSRectFill(dirtyRect);
     
-    // Draw all saved paths with their colors
-    for (NSUInteger i = 0; i < [paths count]; i++) {
-        NSBezierPath *path = [paths objectAtIndex:i];
-        NSColor *color = (i < [pathColors count]) ? [pathColors objectAtIndex:i] : strokeColor;
-        
-        // Check if this path belongs to the selected stroke or related strokes
-        if (isStrokeSelected) {
+    // If we have stroke selection active, we need to handle it differently
+    // because selection highlighting can't be cached
+    if (isStrokeSelected) {
+        // Draw all saved paths with their colors (traditional method for selection)
+        for (NSUInteger i = 0; i < [paths count]; i++) {
+            NSBezierPath *path = [paths objectAtIndex:i];
+            NSColor *color = (i < [pathColors count]) ? [pathColors objectAtIndex:i] : strokeColor;
+            
             // If related strokes array is empty, find them now
             if ([relatedStrokeIndices count] == 0 && selectedStrokeIndex >= 0) {
                 [self findRelatedStrokes:selectedStrokeIndex];
@@ -191,10 +197,24 @@
                 // Ensure we're using the original width for the actual stroke
                 [path setLineWidth:originalWidth];
             }
+            
+            [color set];
+            [path stroke];
         }
+    } else {
+        // Use high-performance cached rendering for normal drawing
+        [self updateStrokeCache];
+        [self drawCachedStrokes];
         
-        [color set];
-        [path stroke];
+        // Draw any strokes that aren't cached yet (current active stroke)
+        NSInteger cachedCount = lastCachedStrokeCount;
+        for (NSUInteger i = cachedCount; i < [paths count]; i++) {
+            NSBezierPath *path = [paths objectAtIndex:i];
+            NSColor *color = (i < [pathColors count]) ? [pathColors objectAtIndex:i] : strokeColor;
+            
+            [color set];
+            [path stroke];
+        }
     }
     
     // Draw current path if it exists
@@ -411,6 +431,9 @@
                 selectedStrokeIndex = -1;
                 isDraggingStroke = NO;
                 [relatedStrokeIndices removeAllObjects];
+                
+                // Invalidate cache when deselecting strokes to restore cached rendering
+                [self invalidateStrokeCache];
             }
         }
     }
@@ -736,6 +759,9 @@
             isDraggingStroke = NO;
             selectedTextIndex = -1;  // Clear text selection
             
+            // Invalidate cache since strokes may have been moved
+            [self invalidateStrokeCache];
+            
             // Note: Window should already be ignoring mouse events during normal operation
             // The event tap handles forwarding mouse events to us
             
@@ -864,6 +890,9 @@
         [currentPath release];
         currentPath = nil;
     }
+    
+    // Invalidate cache since we cleared everything
+    [self invalidateStrokeCache];
     
     [self setNeedsDisplay:YES];
     
@@ -1171,6 +1200,8 @@
             [path transformUsingAffineTransform:transform];
         }
     }
+    
+    // Note: Cache invalidation happens when dragging ends, not during each move
 }
 
 // Erase the entire stroke that contains the given point
@@ -1226,6 +1257,9 @@
         
         // Remove the marker for this stroke
         [strokeMarkers removeObjectAtIndex:markerIndex];
+        
+        // Invalidate cache since stroke was erased
+        [self invalidateStrokeCache];
         
         // Redraw
         [self setNeedsDisplay:YES];
@@ -1444,6 +1478,9 @@
             NSLog(@"DrawView: Undo performed, removed stroke with %ld segments", (long)segmentCount);
         }
         
+        // Invalidate cache since strokes changed
+        [self invalidateStrokeCache];
+        
         // Redraw
         [self setNeedsDisplay:YES];
     } else {
@@ -1594,6 +1631,9 @@
                 NSLog(@"DrawView: Error - not enough paths in undo stack to redo");
             }
         }
+        
+        // Invalidate cache since strokes changed
+        [self invalidateStrokeCache];
         
         // Redraw
         [self setNeedsDisplay:YES];
@@ -1760,6 +1800,13 @@
     [presetColors release];
     [pointBuffer release];
     [relatedStrokeIndices release];
+    
+    // Clean up cache
+    if (cachedStrokesLayer) {
+        CGLayerRelease(cachedStrokesLayer);
+        cachedStrokesLayer = NULL;
+    }
+    
     [super dealloc];
 }
 
@@ -2578,6 +2625,117 @@
     
     // Refresh the view
     [self setNeedsDisplay:YES];
+}
+
+#pragma mark - Performance Caching Methods
+
+- (void)invalidateStrokeCache {
+    cacheNeedsUpdate = YES;
+    NSLog(@"DrawView: Cache invalidated - will rebuild on next draw");
+}
+
+- (void)updateStrokeCache {
+    // Determine how many strokes should be cached
+    NSInteger targetCacheCount = [paths count];
+    if (currentPath && [strokeMarkers count] > 0) {
+        // If actively drawing, only cache completed strokes
+        targetCacheCount = [[strokeMarkers lastObject] integerValue];
+    }
+    
+    // Check if cache is still valid
+    if (!cacheNeedsUpdate && lastCachedStrokeCount == targetCacheCount && cachedStrokesLayer) {
+        return; // Cache is still valid
+    }
+    
+    NSRect bounds = [self bounds];
+    if (NSIsEmptyRect(bounds) || bounds.size.width <= 0 || bounds.size.height <= 0) {
+        return; // Can't create cache with invalid bounds
+    }
+    
+    // Clean up old cache
+    if (cachedStrokesLayer) {
+        CGLayerRelease(cachedStrokesLayer);
+        cachedStrokesLayer = NULL;
+    }
+    
+    // Get the current graphics context
+    NSGraphicsContext *nsContext = [NSGraphicsContext currentContext];
+    if (!nsContext) {
+        // No context available - mark cache as needing update and return
+        cacheNeedsUpdate = YES;
+        return;
+    }
+    
+    CGContextRef context = [nsContext graphicsPort];
+    if (!context) {
+        // No CG context available - mark cache as needing update and return
+        cacheNeedsUpdate = YES;
+        return;
+    }
+    
+    // Create a new layer for caching completed strokes
+    cachedStrokesLayer = CGLayerCreateWithContext(context, bounds.size, NULL);
+    if (!cachedStrokesLayer) {
+        // Failed to create layer - mark cache as needing update and return
+        cacheNeedsUpdate = YES;
+        return;
+    }
+    
+    CGContextRef layerContext = CGLayerGetContext(cachedStrokesLayer);
+    if (!layerContext) {
+        CGLayerRelease(cachedStrokesLayer);
+        cachedStrokesLayer = NULL;
+        cacheNeedsUpdate = YES;
+        return;
+    }
+    
+    // Set up the layer context
+    CGContextSetShouldAntialias(layerContext, true);
+    CGContextSetLineCap(layerContext, kCGLineCapRound);
+    CGContextSetLineJoin(layerContext, kCGLineJoinRound);
+    
+    // Create NSGraphicsContext for the layer
+    NSGraphicsContext *layerNSContext = [NSGraphicsContext graphicsContextWithGraphicsPort:layerContext flipped:NO];
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:layerNSContext];
+    
+    // Use the same calculation as in the validation check
+    NSInteger strokesToDraw = targetCacheCount;
+    
+    // Draw all completed strokes to the cache layer
+    for (NSUInteger i = 0; i < strokesToDraw; i++) {
+        NSBezierPath *path = [paths objectAtIndex:i];
+        NSColor *color = (i < [pathColors count]) ? [pathColors objectAtIndex:i] : strokeColor;
+        
+        [color set];
+        [path stroke];
+    }
+    
+    [NSGraphicsContext restoreGraphicsState];
+    
+    cacheNeedsUpdate = NO;
+    lastCachedStrokeCount = strokesToDraw;
+    NSLog(@"DrawView: Cache rebuilt with %ld strokes", (long)strokesToDraw);
+}
+
+- (void)drawCachedStrokes {
+    if (!cachedStrokesLayer) {
+        return;
+    }
+    
+    // Get the current graphics context
+    NSGraphicsContext *nsContext = [NSGraphicsContext currentContext];
+    if (!nsContext) {
+        return;
+    }
+    
+    CGContextRef context = [nsContext graphicsPort];
+    if (!context) {
+        return;
+    }
+    
+    // Draw the cached layer
+    CGContextDrawLayerAtPoint(context, CGPointZero, cachedStrokesLayer);
 }
 
 @end
