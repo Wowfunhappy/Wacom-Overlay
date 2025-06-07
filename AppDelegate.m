@@ -612,6 +612,44 @@ NSMenu *colorMenu = nil;
     self.isNormalModeKeyDown = NO;
     self.lastUndoKeyTime = nil;
     
+    // Check for accessibility permissions first
+    NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @NO};
+    BOOL accessibilityEnabled = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+    
+    if (!accessibilityEnabled) {
+        NSLog(@"Accessibility permissions not granted - showing alert");
+        
+        // Get app name from Info.plist
+        NSString *appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
+        if (!appName) {
+            appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"];
+        }
+        if (!appName) {
+            appName = [[NSProcessInfo processInfo] processName];
+        }
+        
+        // Create an alert dialog to inform the user
+        NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+        [alert setMessageText:@"Accessibility Permission Required"];
+        [alert setInformativeText:[NSString stringWithFormat:@"%@ needs accessibility permissions to fully capture tablet input.\n\nTo grant permission:\n1. Click 'Open System Preferences' below\n2. Click the lock to make changes\n3. Check the box next to %@\n4. Restart %@", appName, appName, appName]];
+        [alert addButtonWithTitle:@"Open System Preferences"];
+        [alert addButtonWithTitle:@"Quit"];
+        [alert setAlertStyle:NSWarningAlertStyle];
+        
+        NSModalResponse response = [alert runModal];
+        
+        if (response == NSAlertFirstButtonReturn) {
+            // Open System Preferences to the Security & Privacy pane
+            [[NSWorkspace sharedWorkspace] openFile:@"/System/Library/PreferencePanes/Security.prefPane"];
+        }
+        
+        // Quit the app since it can't function without permissions
+        [NSApp terminate:nil];
+        return;
+    }
+    
+    NSLog(@"Accessibility permissions granted - continuing with initialization");
+    
     // Find the Wacom driver PID
     wacomDriverPID = [self findWacomDriverPID];
     if (wacomDriverPID == 0) {
@@ -684,13 +722,26 @@ NSMenu *colorMenu = nil;
                                 self);                 // User data passed to callback
     
     if (!eventTap) {
-        NSLog(@"ERROR: Failed to create event tap! Make sure the app has accessibility permissions in System Preferences > Security & Privacy > Privacy > Accessibility");
+        NSLog(@"ERROR: Failed to create event tap! This shouldn't happen since we already checked accessibility permissions.");
         
-        // Check if accessibility is enabled
-        NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @YES};
-        BOOL accessibilityEnabled = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+        // Get app name from Info.plist
+        NSString *appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
+        if (!appName) {
+            appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"];
+        }
+        if (!appName) {
+            appName = [[NSProcessInfo processInfo] processName];
+        }
         
-        NSLog(@"Accessibility enabled: %@", accessibilityEnabled ? @"YES" : @"NO");
+        // Show an error dialog
+        NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+        [alert setMessageText:@"Failed to Initialize"];
+        [alert setInformativeText:[NSString stringWithFormat:@"%@ could not create the event tap needed to capture tablet input. This is an unexpected error.\n\nPlease try restarting the application.", appName]];
+        [alert addButtonWithTitle:@"Quit"];
+        [alert setAlertStyle:NSCriticalAlertStyle];
+        [alert runModal];
+        
+        [NSApp terminate:nil];
         return;
     }
     
