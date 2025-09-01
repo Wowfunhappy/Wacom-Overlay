@@ -389,11 +389,20 @@
         // Check for text annotations first
         NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
         if (textIndex >= 0) {
-            // Instead of preparing to drag, enter edit mode for the clicked text field
+            // Set up for editing and potential dragging
             NSTextField *clickedTextField = [textFields objectAtIndex:textIndex];
             
-            // Set up for editing this existing text field
+            // Enter edit mode for the clicked text field
             [self startEditingExistingTextField:clickedTextField];
+            
+            // Prepare for potential dragging but don't set isDraggingStroke yet
+            selectedTextFieldIndex = textIndex;
+            selectedStrokeIndex = -1;
+            isStrokeSelected = NO;
+            isDraggingStroke = NO;  // Don't set to YES yet - wait for actual drag
+            dragStartPoint = viewPoint;
+            
+            [self setNeedsDisplay:YES];
             return;
         }
         
@@ -401,8 +410,14 @@
         NSInteger strokeIndex = [self findStrokeAtPointForSelection:viewPoint];
         
         if (strokeIndex >= 0) {
+            // Exit text editing if we're editing
+            if (isEditingText) {
+                [self finishTextInput];
+            }
+            
             // Set this as the selected stroke
             selectedStrokeIndex = strokeIndex;
+            selectedTextFieldIndex = -1;  // Clear text selection when selecting a stroke
             isStrokeSelected = YES;
             isDraggingStroke = YES;
             dragStartPoint = viewPoint;
@@ -419,6 +434,12 @@
                 
                 // Invalidate cache when deselecting strokes to restore cached rendering
                 [self invalidateStrokeCache];
+            }
+            
+            // Also clear text selection and exit edit mode if clicking on empty space
+            selectedTextFieldIndex = -1;
+            if (isEditingText) {
+                [self finishTextInput];
             }
         }
     }
@@ -635,6 +656,13 @@
         // For regular mouse events, use the event's locationInWindow converted to view coordinates
         viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
         NSLog(@"DrawView: mouseDragged detected regular mouse event at point: %@", NSStringFromPoint(viewPoint));
+        
+        // Check if we need to start dragging a text field
+        if (!isDraggingStroke && selectedTextFieldIndex >= 0 && isEditingText) {
+            // Start dragging the text field
+            isDraggingStroke = YES;
+            NSLog(@"DrawView: Started dragging text field");
+        }
         
         // Handle dragging a selected item
         if (isDraggingStroke) {
