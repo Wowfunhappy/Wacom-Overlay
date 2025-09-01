@@ -51,6 +51,23 @@
         [strokeColor release];
         strokeColor = [color retain];
         
+        // Update active text field color if currently editing
+        if (isEditingText && activeTextField) {
+            [activeTextField setTextColor:color];
+            
+            // Update insertion point (cursor) color
+            NSTextView *fieldEditor = (NSTextView *)[[activeTextField window] fieldEditor:YES forObject:activeTextField];
+            if (fieldEditor) {
+                [fieldEditor setInsertionPointColor:color];
+            }
+            
+            // Update the color in the textFieldColors array
+            NSUInteger index = [textFields indexOfObject:activeTextField];
+            if (index != NSNotFound) {
+                [textFieldColors replaceObjectAtIndex:index withObject:color];
+            }
+        }
+        
         // Only post notification if color is not nil (to avoid issues during initialization)
         if (color) {
             // Post a notification about the color change so the cursor can be updated
@@ -1667,22 +1684,11 @@
     // Increment the color index
     currentColorIndex = (currentColorIndex + 1) % [presetColors count];
     
-    // Set the new color
+    // Set the new color using the property setter to trigger all updates
     NSColor *newColor = [presetColors objectAtIndex:currentColorIndex];
+    [self setStrokeColor:newColor];
     
-    // Release old color and retain new one
-    if (strokeColor != newColor) {
-        [strokeColor release];
-        strokeColor = [newColor retain];
-        
-        // Post a notification about the color change so the cursor can be updated
-        NSDictionary *userInfo = [NSDictionary dictionaryWithObject:newColor forKey:@"color"];
-        [[NSNotificationCenter defaultCenter] postNotificationName:@"DrawViewColorChanged" 
-                                                          object:self 
-                                                        userInfo:userInfo];
-        
-        NSLog(@"DrawView: Posted color change notification with color: %@", newColor);
-    }
+    NSLog(@"DrawView: Toggled to color at index %ld: %@", (long)currentColorIndex, newColor);
     
     // Also update the color well in the control panel if there is one
     NSArray *windows = [NSApp windows];
@@ -2251,15 +2257,34 @@
         BOOL success = [[self window] makeFirstResponder:activeTextField];
         if (success) {
             NSLog(@"Text field focused successfully");
+            // Set insertion point color to match current stroke color
+            NSTextView *fieldEditor = (NSTextView *)[[activeTextField window] fieldEditor:YES forObject:activeTextField];
+            if (fieldEditor && [fieldEditor isKindOfClass:[NSTextView class]]) {
+                [fieldEditor setInsertionPointColor:strokeColor];
+            }
         } else {
             NSLog(@"Failed to focus text field - attempting to make window key first");
             [[self window] makeKeyWindow];
             success = [[self window] makeFirstResponder:activeTextField];
             if (success) {
                 NSLog(@"Text field focused successfully on second attempt");
+                // Set insertion point color to match current stroke color
+                NSTextView *fieldEditor = (NSTextView *)[[activeTextField window] fieldEditor:YES forObject:activeTextField];
+                if (fieldEditor && [fieldEditor isKindOfClass:[NSTextView class]]) {
+                    [fieldEditor setInsertionPointColor:strokeColor];
+                }
             } else {
                 NSLog(@"Failed to focus text field even after making window key");
             }
+        }
+    }
+}
+
+- (void)updateTextFieldCursorColor {
+    if (activeTextField) {
+        NSTextView *fieldEditor = (NSTextView *)[[activeTextField window] fieldEditor:YES forObject:activeTextField];
+        if (fieldEditor && [fieldEditor isKindOfClass:[NSTextView class]]) {
+            [fieldEditor setInsertionPointColor:strokeColor];
         }
     }
 }
@@ -2511,6 +2536,13 @@
         // Move cursor to beginning of text
         NSText *fieldEditor = [[self window] fieldEditor:YES forObject:activeTextField];
         [fieldEditor setSelectedRange:NSMakeRange(0, 0)];
+        // Set insertion point color to match current stroke color
+        if ([fieldEditor isKindOfClass:[NSTextView class]]) {
+            [(NSTextView *)fieldEditor setInsertionPointColor:strokeColor];
+        }
+    } else {
+        // For mouse clicks, also set the cursor color after a delay
+        [self performSelector:@selector(updateTextFieldCursorColor) withObject:nil afterDelay:0.1];
     }
     // Otherwise let the field activate naturally from mouse click
     
