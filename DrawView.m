@@ -688,12 +688,18 @@
             // Start dragging the text field
             isDraggingStroke = YES;
             
+            // Store the original position for undo if not already stored
+            if (selectedTextFieldIndex >= 0 && selectedTextFieldIndex < [textFields count]) {
+                NSTextField *textField = [textFields objectAtIndex:selectedTextFieldIndex];
+                dragOriginalPosition = [textField frame].origin;
+            }
+            
             // Exit edit mode when we start dragging
             if (isEditingText) {
                 [self finishTextInput];
             }
             
-            NSLog(@"DrawView: Started dragging text field");
+            NSLog(@"DrawView: Started dragging text field from position %@", NSStringFromPoint(dragOriginalPosition));
         }
         
         // Handle dragging a selected item
@@ -849,6 +855,45 @@
         
         // End any stroke dragging
         if (isDraggingStroke) {
+            // Calculate total movement offset
+            CGFloat totalDx = viewPoint.x - dragOriginalPosition.x;
+            CGFloat totalDy = viewPoint.y - dragOriginalPosition.y;
+            
+            // Only create move command if there was actual movement
+            if (fabs(totalDx) > 0.1 || fabs(totalDy) > 0.1) {
+                if (selectedTextFieldIndex >= 0 && selectedTextFieldIndex < [textFields count]) {
+                    // Create move text command
+                    NSTextField *textField = [textFields objectAtIndex:selectedTextFieldIndex];
+                    NSPoint oldPos = dragOriginalPosition;
+                    NSPoint newPos = [textField frame].origin;
+                    
+                    MoveTextCommand *command = [[MoveTextCommand alloc] initWithDrawView:self 
+                                                                               textField:textField 
+                                                                            fromPosition:oldPos 
+                                                                              toPosition:newPos];
+                    [undoStack addObject:command];
+                    [command release];
+                    
+                    // Clear redo stack
+                    [redoStack removeAllObjects];
+                    
+                    NSLog(@"DrawView: Created move text command from %@ to %@", 
+                          NSStringFromPoint(oldPos), NSStringFromPoint(newPos));
+                } else if (isStrokeSelected && selectedStrokeIndex >= 0) {
+                    // Create move stroke command
+                    MoveStrokeCommand *command = [[MoveStrokeCommand alloc] initWithDrawView:self 
+                                                                               strokeIndices:relatedStrokeIndices 
+                                                                                      offset:NSMakePoint(totalDx, totalDy)];
+                    [undoStack addObject:command];
+                    [command release];
+                    
+                    // Clear redo stack
+                    [redoStack removeAllObjects];
+                    
+                    NSLog(@"DrawView: Created move stroke command with offset (%f, %f)", totalDx, totalDy);
+                }
+            }
+            
             isDraggingStroke = NO;
             selectedTextFieldIndex = -1;  // Clear text field selection
             
@@ -2389,7 +2434,10 @@
     activeTextField = textField;
     [activeTextField retain];
     isEditingText = YES;
-    // 
+    
+    // Store the original text for undo
+    originalTextContent = [[textField stringValue] copy];
+    
     // Store the position
     textInputPosition = [textField frame].origin;
      
