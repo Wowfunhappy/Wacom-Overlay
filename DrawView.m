@@ -2369,6 +2369,9 @@
     NSString *text = [[activeTextField stringValue] copy];
     
     if ([text length] > 0) {
+        // Remove focus from the text field
+        [[self window] makeFirstResponder:nil];
+        
         // Keep the text field as a subview
         [activeTextField setEditable:YES];  // Keep it editable
         [activeTextField setSelectable:YES];
@@ -2415,6 +2418,9 @@
     NSPoint currentPosition = textInputPosition;
     
     if ([text length] > 0) {
+        // Remove focus from the text field
+        [[self window] makeFirstResponder:nil];
+        
         // Keep the text field as a subview
         [activeTextField setEditable:YES];  // Keep it editable
         [activeTextField setSelectable:YES];
@@ -2520,7 +2526,12 @@
 #pragma mark - NSTextFieldDelegate
 
 - (BOOL)control:(NSControl *)control textView:(NSTextView *)textView doCommandBySelector:(SEL)selector {
-    if (selector == @selector(insertNewlineIgnoringFieldEditor:)) {
+    if (selector == @selector(insertNewline:)) {
+        // Regular Enter pressed - finish text input
+        [[control window] endEditingFor:control];
+        [self finishTextInput];
+        return YES; // Return YES to indicate we handled it
+    } else if (selector == @selector(insertNewlineIgnoringFieldEditor:)) {
         // Alt+Enter pressed - finalize current text area and create new one below
         [self finishTextInputAndCreateNewBelow];
         return YES;
@@ -2557,8 +2568,8 @@
     if (textField == activeTextField) {
         NSInteger whyEnd = [[[notification userInfo] objectForKey:@"NSTextMovement"] intValue];
         if (whyEnd == NSReturnTextMovement) {
-            // Enter key pressed - finish text input
-            [self finishTextInput];
+            // Enter key pressed - already handled in control:textView:doCommandBySelector:
+            // Do nothing here to avoid double processing
         } else if (whyEnd == NSCancelTextMovement) {
             // Escape key pressed - cancel text input
             [self cancelTextInput];
