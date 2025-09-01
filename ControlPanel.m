@@ -53,7 +53,7 @@
         [contentView addSubview:lineWidthLabel];
         
         // Create Line Width slider
-        lineWidthSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 165, 180, 17)];
+        lineWidthSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 165, 170, 21)];
         [lineWidthSlider setMinValue:1];
         [lineWidthSlider setMaxValue:3.0];
         [lineWidthSlider setDoubleValue:[drawView lineWidth]];
@@ -71,7 +71,7 @@
         [contentView addSubview:textSizeLabel];
         
         // Create Text Size slider
-        textSizeSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 135, 180, 17)];
+        textSizeSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(100, 135, 170, 21)];
         [textSizeSlider setMinValue:24.0];
         [textSizeSlider setMaxValue:48.0];
         [textSizeSlider setDoubleValue:[drawView textSize]];
@@ -189,7 +189,7 @@
         [preset5Label release];
         
         // Add Reset to Defaults button
-        NSButton *resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(10, 20, 120, 20)];
+        NSButton *resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(10, 15, 130, 25)];
         [resetButton setTitle:@"Reset to Defaults"];
         [resetButton setTarget:self];
         [resetButton setAction:@selector(resetToDefaultsClicked:)];
