@@ -342,6 +342,15 @@
     
     [coloredImage lockFocus];
     
+    // If in erasing mode, flip the image horizontally and vertically
+    if (isErasingMode) {
+        // Apply flip transformation
+        NSAffineTransform *transform = [NSAffineTransform transform];
+        [transform translateXBy:imageSize.width yBy:imageSize.height];
+        [transform scaleXBy:-1.0 yBy:-1.0];
+        [transform concat];
+    }
+    
     // Draw original image as template
     [menuImage drawAtPoint:NSZeroPoint fromRect:NSZeroRect operation:NSCompositeCopy fraction:1.0];
     
@@ -352,12 +361,14 @@
     [coloredImage unlockFocus];
     
     // Create a cursor with the colored image
-    NSCursor *cursor = [[NSCursor alloc] initWithImage:coloredImage 
-                                              hotSpot:NSMakePoint(0, imageSize.height - 1)];
+    // Keep the same hotspot - flipping the image moves the eraser to the hotspot position
+    NSPoint hotSpot = NSMakePoint(0, imageSize.height - 1);
+    
+    NSCursor *cursor = [[NSCursor alloc] initWithImage:coloredImage hotSpot:hotSpot];
     
     [coloredImage release];
     
-    NSLog(@"Created custom cursor with color: %@", color);
+    NSLog(@"Created custom cursor with color: %@, erasing: %@", color, isErasingMode ? @"YES" : @"NO");
     return cursor;
 }
 
@@ -392,7 +403,13 @@
                                                  name:@"DrawViewColorChanged"
                                                object:nil];
     
-    NSLog(@"Registered for color change notifications");
+    // Register for erasing mode change notifications from DrawView
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleErasingModeChanged:)
+                                                 name:@"DrawViewErasingModeChanged"
+                                               object:nil];
+    
+    NSLog(@"Registered for color and erasing mode change notifications");
 }
 
 - (void)handleColorChanged:(NSNotification *)notification {
@@ -400,6 +417,20 @@
     NSColor *newColor = [[notification userInfo] objectForKey:@"color"];
     if (newColor) {
         [self updateCursorWithColor:newColor];
+    }
+}
+
+- (void)handleErasingModeChanged:(NSNotification *)notification {
+    // Extract the erasing state from the notification
+    NSNumber *erasingValue = [[notification userInfo] objectForKey:@"isErasing"];
+    if (erasingValue) {
+        isErasingMode = [erasingValue boolValue];
+        NSLog(@"TabletApplication: Erasing mode changed to %@", isErasingMode ? @"ON" : @"OFF");
+        
+        // Recreate cursor with current color to apply/remove flip
+        if (currentCursorColor) {
+            [self updateCursorWithColor:currentCursorColor];
+        }
     }
 }
 

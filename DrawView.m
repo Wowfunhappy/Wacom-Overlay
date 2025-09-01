@@ -261,6 +261,13 @@
                 if (isEraser != mErasing) {
                     mErasing = isEraser;
                     NSLog(@"DrawView: Eraser state changed to %@", mErasing ? @"ON" : @"OFF");
+                    
+                    // Notify TabletApplication about erasing mode change
+                    NSDictionary *userInfo = [NSDictionary dictionaryWithObject:[NSNumber numberWithBool:mErasing] 
+                                                                         forKey:@"isErasing"];
+                    [[NSNotificationCenter defaultCenter] postNotificationName:@"DrawViewErasingModeChanged" 
+                                                                        object:self 
+                                                                      userInfo:userInfo];
                 }
             }
             break;
@@ -1117,12 +1124,22 @@
         
         // Check if it's the eraser end of the pen
         // Note: the value is 3 in Wacom.h but 2 in NSPointingDeviceType enum
+        BOOL wasErasing = mErasing;
         if (pointerType == 3 || pointerType == 2) { // Try both values to be safe
             mErasing = YES;
             NSLog(@"DrawView: Eraser end detected - enabling eraser mode (type=%d)", pointerType);
         } else {
             mErasing = NO;
             NSLog(@"DrawView: Pen tip detected - disabling eraser mode (type=%d)", pointerType);
+        }
+        
+        // Notify TabletApplication if erasing mode changed
+        if (wasErasing != mErasing) {
+            NSDictionary *userInfo = [NSDictionary dictionaryWithObject:[NSNumber numberWithBool:mErasing] 
+                                                                 forKey:@"isErasing"];
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"DrawViewErasingModeChanged" 
+                                                                object:self 
+                                                              userInfo:userInfo];
         }
     }
 }

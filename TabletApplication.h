@@ -16,6 +16,7 @@ OSStatus CGSSetConnectionProperty(void *connection, void *ownerConnection, CFStr
     BOOL isPenInProximity;
     NSTimer *cursorCheckTimer;
     NSColor *currentCursorColor;
+    BOOL isErasingMode;
 }
 
 - (void)handleProximityEvent:(NSEvent *)theEvent;
