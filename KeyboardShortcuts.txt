@@ -1,17 +1,15 @@
-KEYBOARD:
+These shortcuts will be recognized from any keyboard:
 
-⇧ (hold)	Draw straight line
-⌥⇧⌘T	Create text box
-⌥↵		While typing, create new line.
+⇧ (hold)		Draw straight line
+⌥⇧⌘T		Create text box
+⌥↵			While typing, create new line
 
 
 
-TABLET ONLY:
+These shortcuts must come from a Wacom tablet, such as via an express key:
 
-To be recognized, these shortcuts must be triggered by a Wacom tablet, such as via an express key.
-
-⌘Z		Undo
-⇧⌘Z	Redo
-⌘Z (hold) 	Clear drawing
-⌘D		Switch color
-F14		Use pen as mouse
+⌘Z			Undo
+⇧⌘Z		Redo
+⌘Z (hold) 		Clear drawing
+⌘D			Switch color
+F14			Use pen as mouse
