@@ -32,6 +32,7 @@
     NSPoint dragStartPoint;
     NSPoint dragOriginalPosition; // Track original position for undo
     NSMutableArray *relatedStrokeIndices; // For tracking connected strokes (same color, intersecting)
+    NSMutableArray *originalStrokePaths; // Store original paths before dragging for undo
     
     // Straight line drawing variables
     BOOL isShiftKeyDown;

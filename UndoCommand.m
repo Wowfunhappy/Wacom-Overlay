@@ -36,7 +36,15 @@
 - (id)initWithDrawView:(DrawView *)view paths:(NSArray *)paths colors:(NSArray *)colors markerIndex:(NSInteger)marker {
     self = [super initWithDrawView:view];
     if (self) {
-        strokePaths = [[NSMutableArray alloc] initWithArray:paths];
+        // Make deep copies of the paths so they won't be affected by future transformations
+        strokePaths = [[NSMutableArray alloc] initWithCapacity:[paths count]];
+        for (NSBezierPath *path in paths) {
+            NSBezierPath *pathCopy = [path copy];
+            [strokePaths addObject:pathCopy];
+            [pathCopy release];
+        }
+        
+        // Colors can be shallow copied as they're immutable
         strokeColors = [[NSMutableArray alloc] initWithArray:colors];
         markerIndex = marker;
         segmentCount = [paths count];
@@ -53,9 +61,11 @@
     // Add marker
     [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
     
-    // Add all segments
+    // Add copies of all segments to avoid them being modified by future operations
     for (NSInteger i = 0; i < [strokePaths count]; i++) {
-        [paths addObject:[strokePaths objectAtIndex:i]];
+        NSBezierPath *pathCopy = [[strokePaths objectAtIndex:i] copy];
+        [paths addObject:pathCopy];
+        [pathCopy release];
         [pathColors addObject:[strokeColors objectAtIndex:i]];
     }
     
@@ -404,41 +414,72 @@
 // Move Stroke Command
 @implementation MoveStrokeCommand
 
-- (id)initWithDrawView:(DrawView *)view strokeIndices:(NSArray *)indices offset:(NSPoint)off {
+- (id)initWithDrawView:(DrawView *)view strokeIndices:(NSArray *)indices offset:(NSPoint)off originalPaths:(NSArray *)origPaths {
     self = [super initWithDrawView:view];
     if (self) {
         strokeIndices = [indices retain];
         offset = off;
-        originalTransforms = [[NSMutableArray alloc] init];
+        originalPaths = [[NSMutableArray alloc] initWithArray:origPaths];
+        movedPaths = [[NSMutableArray alloc] init];
+        
+        // Store the current (moved) state of the paths
+        NSMutableArray *paths = [drawView valueForKey:@"paths"];
+        NSMutableArray *strokeMarkers = [drawView valueForKey:@"strokeMarkers"];
+        
+        for (NSDictionary *strokeInfo in origPaths) {
+            NSNumber *strokeIndexNum = [strokeInfo objectForKey:@"index"];
+            NSInteger sIndex = [strokeIndexNum integerValue];
+            
+            if (sIndex >= 0 && sIndex < [strokeMarkers count]) {
+                NSInteger startIndex = [[strokeMarkers objectAtIndex:sIndex] integerValue];
+                NSInteger endIndex;
+                if (sIndex < [strokeMarkers count] - 1) {
+                    endIndex = [[strokeMarkers objectAtIndex:sIndex + 1] integerValue] - 1;
+                } else {
+                    endIndex = [paths count] - 1;
+                }
+                
+                // Store copies of current (moved) paths
+                NSMutableArray *strokePaths = [NSMutableArray array];
+                for (NSInteger i = startIndex; i <= endIndex; i++) {
+                    NSBezierPath *pathCopy = [[paths objectAtIndex:i] copy];
+                    [strokePaths addObject:pathCopy];
+                    [pathCopy release];
+                }
+                
+                [movedPaths addObject:@{@"index": strokeIndexNum, @"paths": strokePaths}];
+            }
+        }
     }
     return self;
 }
 
 - (void)execute {
+    // Restore the moved state (for redo)
     NSMutableArray *paths = [drawView valueForKey:@"paths"];
     NSMutableArray *strokeMarkers = [drawView valueForKey:@"strokeMarkers"];
     
-    for (NSNumber *strokeIndexNum in strokeIndices) {
-        NSInteger strokeIndex = [strokeIndexNum integerValue];
+    for (NSDictionary *strokeInfo in movedPaths) {
+        NSNumber *strokeIndexNum = [strokeInfo objectForKey:@"index"];
+        NSInteger sIndex = [strokeIndexNum integerValue];
+        NSArray *strokePaths = [strokeInfo objectForKey:@"paths"];
         
-        if (strokeIndex < 0 || strokeIndex >= [strokeMarkers count]) {
-            continue;
-        }
-        
-        NSInteger startIndex = [[strokeMarkers objectAtIndex:strokeIndex] integerValue];
-        NSInteger endIndex;
-        
-        if (strokeIndex < [strokeMarkers count] - 1) {
-            endIndex = [[strokeMarkers objectAtIndex:strokeIndex + 1] integerValue] - 1;
-        } else {
-            endIndex = [paths count] - 1;
-        }
-        
-        for (NSInteger i = startIndex; i <= endIndex; i++) {
-            NSBezierPath *path = [paths objectAtIndex:i];
-            NSAffineTransform *transform = [NSAffineTransform transform];
-            [transform translateXBy:offset.x yBy:offset.y];
-            [path transformUsingAffineTransform:transform];
+        if (sIndex >= 0 && sIndex < [strokeMarkers count]) {
+            NSInteger startIndex = [[strokeMarkers objectAtIndex:sIndex] integerValue];
+            NSInteger endIndex;
+            if (sIndex < [strokeMarkers count] - 1) {
+                endIndex = [[strokeMarkers objectAtIndex:sIndex + 1] integerValue] - 1;
+            } else {
+                endIndex = [paths count] - 1;
+            }
+            
+            // Replace paths with the moved versions
+            NSInteger pathIdx = 0;
+            for (NSInteger i = startIndex; i <= endIndex && pathIdx < [strokePaths count]; i++, pathIdx++) {
+                NSBezierPath *movedPath = [[strokePaths objectAtIndex:pathIdx] copy];
+                [paths replaceObjectAtIndex:i withObject:movedPath];
+                [movedPath release];
+            }
         }
     }
     
@@ -447,30 +488,31 @@
 }
 
 - (void)undo {
+    // Restore the original state
     NSMutableArray *paths = [drawView valueForKey:@"paths"];
     NSMutableArray *strokeMarkers = [drawView valueForKey:@"strokeMarkers"];
     
-    for (NSNumber *strokeIndexNum in strokeIndices) {
-        NSInteger strokeIndex = [strokeIndexNum integerValue];
+    for (NSDictionary *strokeInfo in originalPaths) {
+        NSNumber *strokeIndexNum = [strokeInfo objectForKey:@"index"];
+        NSInteger sIndex = [strokeIndexNum integerValue];
+        NSArray *strokePaths = [strokeInfo objectForKey:@"paths"];
         
-        if (strokeIndex < 0 || strokeIndex >= [strokeMarkers count]) {
-            continue;
-        }
-        
-        NSInteger startIndex = [[strokeMarkers objectAtIndex:strokeIndex] integerValue];
-        NSInteger endIndex;
-        
-        if (strokeIndex < [strokeMarkers count] - 1) {
-            endIndex = [[strokeMarkers objectAtIndex:strokeIndex + 1] integerValue] - 1;
-        } else {
-            endIndex = [paths count] - 1;
-        }
-        
-        for (NSInteger i = startIndex; i <= endIndex; i++) {
-            NSBezierPath *path = [paths objectAtIndex:i];
-            NSAffineTransform *transform = [NSAffineTransform transform];
-            [transform translateXBy:-offset.x yBy:-offset.y];
-            [path transformUsingAffineTransform:transform];
+        if (sIndex >= 0 && sIndex < [strokeMarkers count]) {
+            NSInteger startIndex = [[strokeMarkers objectAtIndex:sIndex] integerValue];
+            NSInteger endIndex;
+            if (sIndex < [strokeMarkers count] - 1) {
+                endIndex = [[strokeMarkers objectAtIndex:sIndex + 1] integerValue] - 1;
+            } else {
+                endIndex = [paths count] - 1;
+            }
+            
+            // Replace paths with the original versions
+            NSInteger pathIdx = 0;
+            for (NSInteger i = startIndex; i <= endIndex && pathIdx < [strokePaths count]; i++, pathIdx++) {
+                NSBezierPath *originalPath = [[strokePaths objectAtIndex:pathIdx] copy];
+                [paths replaceObjectAtIndex:i withObject:originalPath];
+                [originalPath release];
+            }
         }
     }
     
@@ -484,7 +526,8 @@
 
 - (void)dealloc {
     [strokeIndices release];
-    [originalTransforms release];
+    [originalPaths release];
+    [movedPaths release];
     [super dealloc];
 }
 @end

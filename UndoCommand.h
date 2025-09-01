@@ -74,9 +74,10 @@
 @interface MoveStrokeCommand : UndoCommand {
     NSArray *strokeIndices;
     NSPoint offset;
-    NSMutableArray *originalTransforms;
+    NSMutableArray *originalPaths;
+    NSMutableArray *movedPaths;
 }
-- (id)initWithDrawView:(DrawView *)view strokeIndices:(NSArray *)indices offset:(NSPoint)offset;
+- (id)initWithDrawView:(DrawView *)view strokeIndices:(NSArray *)indices offset:(NSPoint)offset originalPaths:(NSArray *)origPaths;
 @end
 
 // Command for moving text

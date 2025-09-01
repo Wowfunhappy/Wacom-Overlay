@@ -100,6 +100,7 @@
         isDraggingStroke = NO;
         dragStartPoint = NSZeroPoint;
         relatedStrokeIndices = [[NSMutableArray alloc] init];
+        originalStrokePaths = [[NSMutableArray alloc] init];
         
         // Initialize text field variables
         textFields = [[NSMutableArray alloc] init];
@@ -445,9 +446,35 @@
             isStrokeSelected = YES;
             isDraggingStroke = YES;
             dragStartPoint = viewPoint;
+            dragOriginalPosition = viewPoint; // Store original position for undo
             
             // Find all related strokes (same color and intersecting)
             [self findRelatedStrokes:strokeIndex];
+            
+            // Store original paths of all related strokes before we start dragging
+            [originalStrokePaths removeAllObjects];
+            for (NSNumber *strokeIndexNum in relatedStrokeIndices) {
+                NSInteger sIndex = [strokeIndexNum integerValue];
+                if (sIndex >= 0 && sIndex < [strokeMarkers count]) {
+                    NSInteger startIndex = [[strokeMarkers objectAtIndex:sIndex] integerValue];
+                    NSInteger endIndex;
+                    if (sIndex < [strokeMarkers count] - 1) {
+                        endIndex = [[strokeMarkers objectAtIndex:sIndex + 1] integerValue] - 1;
+                    } else {
+                        endIndex = [paths count] - 1;
+                    }
+                    
+                    // Store copies of all paths in this stroke
+                    NSMutableArray *strokePaths = [NSMutableArray array];
+                    for (NSInteger i = startIndex; i <= endIndex; i++) {
+                        NSBezierPath *pathCopy = [[paths objectAtIndex:i] copy];
+                        [strokePaths addObject:pathCopy];
+                        [pathCopy release];
+                    }
+                    
+                    [originalStrokePaths addObject:@{@"index": strokeIndexNum, @"paths": strokePaths}];
+                }
+            }
         } else {
             // If no stroke was found at this point, clear any existing selection
             if (isStrokeSelected) {
@@ -880,10 +907,13 @@
                     NSLog(@"DrawView: Created move text command from %@ to %@", 
                           NSStringFromPoint(oldPos), NSStringFromPoint(newPos));
                 } else if (isStrokeSelected && selectedStrokeIndex >= 0) {
-                    // Create move stroke command
+                    // Create move stroke command with original paths
+                    // Note: The strokes have already been moved during dragging
                     MoveStrokeCommand *command = [[MoveStrokeCommand alloc] initWithDrawView:self 
                                                                                strokeIndices:relatedStrokeIndices 
-                                                                                      offset:NSMakePoint(totalDx, totalDy)];
+                                                                                      offset:NSMakePoint(totalDx, totalDy)
+                                                                               originalPaths:originalStrokePaths];
+                    // Don't execute since strokes are already moved
                     [undoStack addObject:command];
                     [command release];
                     
@@ -1695,6 +1725,7 @@
     [strokeColor release];
     [presetColors release];
     [relatedStrokeIndices release];
+    [originalStrokePaths release];
     
     // Clean up text fields
     for (NSTextField *textField in textFields) {
