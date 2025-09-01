@@ -98,6 +98,7 @@
 // Text annotation methods
 - (void)startTextInputAtPoint:(NSPoint)point;
 - (void)startEditingExistingTextField:(NSTextField *)textField;
+- (void)startEditingExistingTextField:(NSTextField *)textField fromKeyboard:(BOOL)fromKeyboard;
 - (void)finishTextInput;
 - (void)finishTextInputAndCreateNewBelow;
 - (void)cancelTextInput;

@@ -2428,8 +2428,17 @@
     CGFloat lineHeight = self.textSize + 4; // Add 4px line spacing
     NSPoint newPosition = NSMakePoint(currentPosition.x, currentPosition.y - lineHeight);
     
-    // Create new text area below the current one
-    [self startTextInputAtPoint:newPosition];
+    // Check if a text field already exists at this exact location
+    NSInteger existingTextIndex = [self findTextFieldAtPoint:newPosition];
+    if (existingTextIndex >= 0) {
+        // Switch to editing the existing text field instead of creating a new one
+        NSTextField *existingTextField = [textFields objectAtIndex:existingTextIndex];
+        // Pass YES for fromKeyboard since this is triggered by Option+Return
+        [self startEditingExistingTextField:existingTextField fromKeyboard:YES];
+    } else {
+        // Create new text area below the current one
+        [self startTextInputAtPoint:newPosition];
+    }
     
     // Redraw to show the completed text
     [self setNeedsDisplay:YES];
@@ -2456,6 +2465,10 @@
 }
 
 - (void)startEditingExistingTextField:(NSTextField *)textField {
+    [self startEditingExistingTextField:textField fromKeyboard:NO];
+}
+
+- (void)startEditingExistingTextField:(NSTextField *)textField fromKeyboard:(BOOL)fromKeyboard {
     // If already editing something else, finish it first
     if (isEditingText) {
         [self finishTextInput];
@@ -2490,6 +2503,16 @@
     
     // Make the window key and order front to accept keyboard input
     [[self window] makeKeyAndOrderFront:nil];
+    
+    // Only explicitly focus if triggered from keyboard (Option+Return)
+    if (fromKeyboard) {
+        // Make it first responder and then move cursor to beginning to avoid selection
+        [[self window] makeFirstResponder:activeTextField];
+        // Move cursor to beginning of text
+        NSText *fieldEditor = [[self window] fieldEditor:YES forObject:activeTextField];
+        [fieldEditor setSelectedRange:NSMakeRange(0, 0)];
+    }
+    // Otherwise let the field activate naturally from mouse click
     
     NSLog(@"Started editing existing text field: %@", [activeTextField stringValue]);
 }
