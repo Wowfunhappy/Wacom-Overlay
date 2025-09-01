@@ -425,7 +425,10 @@
         }
     }
     
-    [self setNeedsDisplay:YES];
+    // Only redraw if something visual has changed
+    if (isStrokeSelected || currentPath || straightLinePath) {
+        [self setNeedsDisplay:YES];
+    }
 }
 
 - (void)mouseDragged:(NSEvent *)event {
@@ -562,7 +565,7 @@
             // Save current point as last point (even though we're not adding segments)
             lastPoint = viewPoint;
             
-            // Force a redraw to show the preview
+            // Need full redraw to show the preview properly
             [self setNeedsDisplay:YES];
             
             return;
@@ -584,8 +587,19 @@
                 NSLog(@"DrawView: Using pressure: %f, width: %f", [event pressure], segmentWidth);
             }
             
-            // If the distance is large, interpolate intermediate points
-            NSInteger numSegments = MAX(1, (NSInteger)(distance / 2.0)); // Create a segment every 2 pixels
+            // Balance performance and quality
+            // Skip only extremely small movements
+            if (distance < 0.1) {
+                return; // Skip microscopic movements
+            }
+            
+            // Adaptive interpolation based on distance for smooth curves
+            NSInteger numSegments = 1;
+            if (distance > 5.0) {
+                // More aggressive interpolation for smoother curves
+                // But still less than original (was /2.0, now /4.0)
+                numSegments = MAX(1, (NSInteger)(distance / 4.0));
+            }
             
             for (NSInteger i = 0; i < numSegments; i++) {
                 // Calculate interpolated point
@@ -615,6 +629,9 @@
             lastPoint = viewPoint;
             
             NSLog(@"DrawView: Added %ld interpolated segments, distance: %f", (long)numSegments, distance);
+            
+            // Need full redraw during active drawing to ensure proper rendering
+            [self setNeedsDisplay:YES];
         }
     } else {
         // For regular mouse events, use the event's locationInWindow converted to view coordinates
@@ -643,7 +660,7 @@
         }
     }
     
-    // Redraw
+    // Need full redraw during dragging to ensure visibility
     [self setNeedsDisplay:YES];
 }
 
@@ -751,6 +768,10 @@
         // Straight line path cleanup is now handled above
     }
     
+    // When ending a stroke, invalidate cache so it gets rebuilt with the completed stroke
+    [self invalidateStrokeCache];
+    
+    // Use full redraw on mouseUp to ensure cache is properly rendered
     [self setNeedsDisplay:YES];
 }
 
@@ -1635,6 +1656,37 @@
     hasLastErasePoint = NO;
     lastErasePoint = NSZeroPoint;
     NSLog(@"DrawView: Reset erase tracking");
+}
+
+// Calculate bounding rect for current stroke being drawn
+- (NSRect)boundsForCurrentStroke {
+    if (straightLinePath) {
+        return NSInsetRect([straightLinePath bounds], -10, -10);
+    }
+    if (currentPath) {
+        return NSInsetRect([currentPath bounds], -10, -10);
+    }
+    
+    // For segment-based drawing, calculate bounds from recent segments
+    if ([paths count] > 0 && [strokeMarkers count] > 0) {
+        NSInteger lastMarker = [[strokeMarkers lastObject] integerValue];
+        if ([paths count] > lastMarker) {
+            // Get bounds of segments added since last stroke marker
+            NSRect bounds = NSZeroRect;
+            for (NSInteger i = lastMarker; i < [paths count]; i++) {
+                NSBezierPath *path = [paths objectAtIndex:i];
+                if (NSIsEmptyRect(bounds)) {
+                    bounds = [path bounds];
+                } else {
+                    bounds = NSUnionRect(bounds, [path bounds]);
+                }
+            }
+            return NSInsetRect(bounds, -10, -10);
+        }
+    }
+    
+    // If no current stroke, return a small rect around the last point
+    return NSMakeRect(lastPoint.x - 20, lastPoint.y - 20, 40, 40);
 }
 
 - (NSArray *)presetColors {
