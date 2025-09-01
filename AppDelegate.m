@@ -121,7 +121,8 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         else if (type == kCGEventLeftMouseUp) {
             if ([[drawView valueForKey:@"isDraggingStroke"] boolValue]) {
                 [drawView mouseEvent:nsEvent];
-                return NULL; // Capture to complete the drag
+                // Let the event through after processing - this prevents the mouse from getting "stuck"
+                return event;
             }
         }
         // For mouse move events, let them through without any special handling
