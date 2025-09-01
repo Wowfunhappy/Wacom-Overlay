@@ -88,13 +88,13 @@
 
 // Text annotation methods
 - (void)startTextInputAtPoint:(NSPoint)point;
+- (void)startEditingExistingTextField:(NSTextField *)textField;
 - (void)finishTextInput;
 - (void)finishTextInputAndCreateNewBelow;
 - (void)cancelTextInput;
 - (NSInteger)findTextAnnotationAtPoint:(NSPoint)point;
 - (NSRect)boundsForTextAnnotation:(NSDictionary *)annotation;
 - (void)moveSelectedText:(NSPoint)offset;
-- (void)drawTextAnnotations;
 - (void)enterTextInputMode;
 - (void)exitTextInputMode;
 - (void)resetToDefaults;

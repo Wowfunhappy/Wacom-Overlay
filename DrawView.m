@@ -389,12 +389,11 @@
         // Check for text annotations first
         NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
         if (textIndex >= 0) {
-            selectedTextFieldIndex = textIndex;
-            selectedStrokeIndex = -1;
-            isStrokeSelected = NO;
-            isDraggingStroke = YES;
-            dragStartPoint = viewPoint;
-            [self setNeedsDisplay:YES];
+            // Instead of preparing to drag, enter edit mode for the clicked text field
+            NSTextField *clickedTextField = [textFields objectAtIndex:textIndex];
+            
+            // Set up for editing this existing text field
+            [self startEditingExistingTextField:clickedTextField];
             return;
         }
         
@@ -755,13 +754,18 @@
             isDraggingStroke = NO;
             selectedTextFieldIndex = -1;  // Clear text field selection
             
+            // Also clear stroke selection state
+            isStrokeSelected = NO;
+            selectedStrokeIndex = -1;
+            [relatedStrokeIndices removeAllObjects];
+            
             // Invalidate cache since strokes may have been moved
             [self invalidateStrokeCache];
             
             // Note: Window should already be ignoring mouse events during normal operation
             // The event tap handles forwarding mouse events to us
             
-            NSLog(@"DrawView: Finished dragging");
+            NSLog(@"DrawView: Finished dragging, cleared selection");
         }
         
         // Straight line path cleanup is now handled above
@@ -2387,28 +2391,44 @@
     
     NSString *text = [[activeTextField stringValue] copy];
     
+    // Check if this is an existing text field being edited
+    BOOL isExistingTextField = [textFields containsObject:activeTextField];
+    
     if ([text length] > 0) {
         // Remove focus from the text field
         [[self window] makeFirstResponder:nil];
         
-        // Keep the text field as a subview
-        [activeTextField setEditable:YES];  // Keep it editable
-        [activeTextField setSelectable:YES];
+        // Make the text field non-editable after editing
+        [activeTextField setEditable:NO];
+        [activeTextField setSelectable:NO];
         
-        // Add to arrays for tracking
-        [textFields addObject:activeTextField];
-        [textFieldColors addObject:strokeColor];
-        
-        // Retain the text field since we're keeping it
-        [activeTextField retain];
-        
-        // Clear redo stacks
-        [undoTextFields removeAllObjects];
-        [undoTextFieldColors removeAllObjects];
-        
-        NSLog(@"Added text field: %@", text);
+        // Only add to arrays if it's a new text field
+        if (!isExistingTextField) {
+            // Add to arrays for tracking
+            [textFields addObject:activeTextField];
+            [textFieldColors addObject:strokeColor];
+            
+            // Retain the text field since we're keeping it
+            [activeTextField retain];
+            
+            // Clear redo stacks
+            [undoTextFields removeAllObjects];
+            [undoTextFieldColors removeAllObjects];
+            
+            NSLog(@"Added new text field: %@", text);
+        } else {
+            NSLog(@"Updated existing text field: %@", text);
+        }
     } else {
         // If empty, remove it
+        if (isExistingTextField) {
+            // Remove from arrays if it was existing
+            NSInteger index = [textFields indexOfObject:activeTextField];
+            if (index != NSNotFound) {
+                [textFields removeObjectAtIndex:index];
+                [textFieldColors removeObjectAtIndex:index];
+            }
+        }
         [activeTextField removeFromSuperview];
     }
     
@@ -2436,28 +2456,44 @@
     NSString *text = [[activeTextField stringValue] copy];
     NSPoint currentPosition = textInputPosition;
     
+    // Check if this is an existing text field being edited
+    BOOL isExistingTextField = [textFields containsObject:activeTextField];
+    
     if ([text length] > 0) {
         // Remove focus from the text field
         [[self window] makeFirstResponder:nil];
         
-        // Keep the text field as a subview
-        [activeTextField setEditable:YES];  // Keep it editable
-        [activeTextField setSelectable:YES];
+        // Make the text field non-editable after editing
+        [activeTextField setEditable:NO];
+        [activeTextField setSelectable:NO];
         
-        // Add to arrays for tracking
-        [textFields addObject:activeTextField];
-        [textFieldColors addObject:strokeColor];
-        
-        // Retain the text field since we're keeping it
-        [activeTextField retain];
-        
-        // Clear redo stacks
-        [undoTextFields removeAllObjects];
-        [undoTextFieldColors removeAllObjects];
-        
-        NSLog(@"Added text field: %@", text);
+        // Only add to arrays if it's a new text field
+        if (!isExistingTextField) {
+            // Add to arrays for tracking
+            [textFields addObject:activeTextField];
+            [textFieldColors addObject:strokeColor];
+            
+            // Retain the text field since we're keeping it
+            [activeTextField retain];
+            
+            // Clear redo stacks
+            [undoTextFields removeAllObjects];
+            [undoTextFieldColors removeAllObjects];
+            
+            NSLog(@"Added new text field: %@", text);
+        } else {
+            NSLog(@"Updated existing text field: %@", text);
+        }
     } else {
         // If empty, remove it
+        if (isExistingTextField) {
+            // Remove from arrays if it was existing
+            NSInteger index = [textFields indexOfObject:activeTextField];
+            if (index != NSNotFound) {
+                [textFields removeObjectAtIndex:index];
+                [textFieldColors removeObjectAtIndex:index];
+            }
+        }
         [activeTextField removeFromSuperview];
     }
     
@@ -2495,9 +2531,40 @@
     NSLog(@"Cancelled text input");
 }
 
-- (void)drawTextAnnotations {
-    // Text fields are now persistent NSTextField subviews, no need to draw them
-    // This method is kept for compatibility but does nothing
+- (void)startEditingExistingTextField:(NSTextField *)textField {
+    // If already editing something else, finish it first
+    if (isEditingText) {
+        [self finishTextInput];
+    }
+    
+    // Set the text field as active
+    activeTextField = textField;
+    [activeTextField retain];
+    isEditingText = YES;
+    // 
+    // Store the position
+    textInputPosition = [textField frame].origin;
+     
+    // Temporarily allow the window to accept events for text input
+    [[self window] setIgnoresMouseEvents:NO];
+    
+    // Store the original window level
+    originalWindowLevel = [[self window] level];
+    
+    // Temporarily lower window level to allow proper keyboard focus
+    [[self window] setLevel:NSFloatingWindowLevel];
+    
+    // Make the text field editable
+    [activeTextField setEditable:YES];
+    [activeTextField setSelectable:YES];
+    
+    // Activate the application to ensure it can receive keyboard events
+    [NSApp activateIgnoringOtherApps:YES];
+    
+    // Make the window key and order front to accept keyboard input
+    [[self window] makeKeyAndOrderFront:nil];
+    
+    NSLog(@"Started editing existing text field: %@", [activeTextField stringValue]);
 }
 
 - (NSInteger)findTextAnnotationAtPoint:(NSPoint)point {
