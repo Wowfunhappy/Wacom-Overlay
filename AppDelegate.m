@@ -144,9 +144,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             // In OS X 10.9, use the raw bit values
             BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
             BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-            BOOL isControlDown = (flags & (1 << 18)) != 0;   // NSControlKeyMask in 10.9
             BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
-            BOOL isC = ([characters isEqualToString:@"C"] || [characters isEqualToString:@"c"]);
             BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
             BOOL isD = ([characters isEqualToString:@"D"] || [characters isEqualToString:@"d"]);
             BOOL isT = ([characters isEqualToString:@"T"] || [characters isEqualToString:@"t"]);
@@ -169,16 +167,8 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
             }
             
             if (drawView) {
-                // Handle special toggle with Ctrl+Cmd+Opt+Shift+C
-                if (isControlDown && isCommandDown && isOptionDown && isShiftDown && isC) {
-                    NSLog(@"EVENT TAP: Special color toggle detected");
-                    if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
-                        [drawView toggleToNextColor];
-                    }
-                    eventHandled = YES;
-                }
                 // Handle F14 to temporarily act as a normal mouse while pressed
-                else if ([nsEvent keyCode] == 107) { // F14 key code
+                if ([nsEvent keyCode] == 107) { // F14 key code
                     NSLog(@"EVENT TAP: F14 detected - temporarily disabling tablet interception");
                     // Set the flag to indicate normal mode is active
                     appDelegate.isNormalModeKeyDown = YES;
@@ -480,7 +470,17 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     // Add separator
     [menu addItem:[NSMenuItem separatorItem]];
     
-    // 4. Quit
+    // 4. Help (Keyboard Shortcuts)
+    NSMenuItem *helpItem = [[[NSMenuItem alloc] initWithTitle:@"Keyboard Shortcuts..." 
+                                                        action:@selector(showKeyboardShortcuts:) 
+                                                 keyEquivalent:@""] autorelease];
+    [helpItem setTarget:self];
+    [menu addItem:helpItem];
+    
+    // Add separator
+    [menu addItem:[NSMenuItem separatorItem]];
+    
+    // 5. Quit
     NSMenuItem *quitItem = [[[NSMenuItem alloc] initWithTitle:@"Quit" 
                                                     action:@selector(terminate:) 
                                              keyEquivalent:@"q"] autorelease];
@@ -498,6 +498,56 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         [self.controlPanel orderFrontRegardless];
         [self.controlPanel makeKeyAndOrderFront:nil];
     }
+}
+
+// Show Keyboard Shortcuts dialog
+- (void)showKeyboardShortcuts:(id)sender {
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    [alert setMessageText:@"Keyboard Shortcuts"];
+    
+    // Try to read shortcuts from the text file in the app bundle
+    NSString *shortcutsPath = [[NSBundle mainBundle] pathForResource:@"KeyboardShortcuts" ofType:@"txt"];
+    NSString *shortcuts = nil;
+    
+    if (shortcutsPath) {
+        NSError *error = nil;
+        shortcuts = [NSString stringWithContentsOfFile:shortcutsPath 
+                                              encoding:NSUTF8StringEncoding 
+                                                 error:&error];
+        if (error) {
+            NSLog(@"Error reading keyboard shortcuts file: %@", error);
+            shortcuts = nil;
+        }
+    }
+    
+    // Fallback to default text if file couldn't be read
+    if (!shortcuts) {
+        shortcuts = @"Drawing & Navigation:\n"
+                   @"• Shift + Drag: Draw straight lines\n"
+                   @"• F14 (hold): Temporarily use pen as normal mouse\n"
+                   @"• Click on stroke: Select and drag to move\n"
+                   @"\n"
+                   @"Editing:\n"
+                   @"• ⌘Z: Undo last stroke\n"
+                   @"• ⌘Z (hold): Clear all drawing\n"
+                   @"• ⇧⌘Z: Redo\n"
+                   @"\n"
+                   @"Colors:\n"
+                   @"• ⌘D: Toggle to next color\n"
+                   @"\n"
+                   @"Text:\n"
+                   @"• ⌥⇧⌘T: Enter text input mode\n"
+                   @"• Alt+Enter: Create new text area below (in text mode)\n"
+                   @"\n"
+                   @"Note: Most shortcuts work from the Wacom tablet buttons.";
+        NSLog(@"Using fallback keyboard shortcuts text");
+    }
+    
+    [alert setInformativeText:shortcuts];
+    [alert addButtonWithTitle:@"OK"];
+    [alert setAlertStyle:NSInformationalAlertStyle];
+    
+    [alert runModal];
 }
 
 // Clear Drawing action

@@ -26,5 +26,6 @@
 - (void)setupStatusBarMenu;
 - (void)openControls:(id)sender;
 - (void)clearDrawing:(id)sender;
+- (void)showKeyboardShortcuts:(id)sender;
 
 @end
