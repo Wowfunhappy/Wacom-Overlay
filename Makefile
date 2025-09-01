@@ -27,6 +27,7 @@ $(APP_DIR): $(EXECUTABLE_NAME)
 	cp menuIcon.png "$(RESOURCES_DIR)/"
 	cp menuIcon@2x.png "$(RESOURCES_DIR)/"
 	cp KeyboardShortcuts.txt "$(RESOURCES_DIR)/"
+	codesign --force --sign "Wowfunhappy" "$(APP_DIR)"
 
 $(EXECUTABLE_NAME): $(OBJECTS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
