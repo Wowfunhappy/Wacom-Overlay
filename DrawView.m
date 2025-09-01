@@ -1651,6 +1651,25 @@
 
 // Override hit testing to allow click-through when not over a stroke
 - (NSView *)hitTest:(NSPoint)point {
+    // First check if we're editing text - if so, let normal hit testing work
+    if (isEditingText && activeTextField) {
+        // Check if the click is on the active text field
+        NSPoint textFieldPoint = [activeTextField convertPoint:point fromView:nil];
+        if ([activeTextField mouse:textFieldPoint inRect:[activeTextField bounds]]) {
+            NSLog(@"DrawView: Hit test - click on active text field");
+            return [activeTextField hitTest:point];
+        }
+    }
+    
+    // Also check if click is on any existing text field
+    for (NSTextField *textField in textFields) {
+        NSPoint textFieldPoint = [textField convertPoint:point fromView:nil];
+        if ([textField mouse:textFieldPoint inRect:[textField bounds]]) {
+            NSLog(@"DrawView: Hit test - click on text field");
+            return [textField hitTest:point];
+        }
+    }
+    
     // Convert incoming point from window coordinates to view coordinates
     NSPoint viewPoint = [self convertPoint:point fromView:nil];
     
