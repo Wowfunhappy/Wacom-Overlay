@@ -389,18 +389,29 @@
         // Check for text annotations first
         NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
         if (textIndex >= 0) {
-            // Set up for editing and potential dragging
             NSTextField *clickedTextField = [textFields objectAtIndex:textIndex];
             
-            // Enter edit mode for the clicked text field
-            [self startEditingExistingTextField:clickedTextField];
+            // Check if we're already editing this specific text field
+            BOOL wasAlreadyEditingThisField = (isEditingText && activeTextField == clickedTextField);
             
-            // Prepare for potential dragging but don't set isDraggingStroke yet
-            selectedTextFieldIndex = textIndex;
-            selectedStrokeIndex = -1;
-            isStrokeSelected = NO;
-            isDraggingStroke = NO;  // Don't set to YES yet - wait for actual drag
-            dragStartPoint = viewPoint;
+            // Enter edit mode for the clicked text field (if not already editing it)
+            if (!wasAlreadyEditingThisField) {
+                [self startEditingExistingTextField:clickedTextField];
+            }
+            
+            // Only prepare for dragging if we weren't already editing this field
+            // If we were already editing, we want drag to select text, not move the field
+            if (!wasAlreadyEditingThisField) {
+                selectedTextFieldIndex = textIndex;
+                selectedStrokeIndex = -1;
+                isStrokeSelected = NO;
+                isDraggingStroke = NO;  // Don't set to YES yet - wait for actual drag
+                dragStartPoint = viewPoint;
+            } else {
+                // Already editing - clear drag preparation so drag will select text
+                selectedTextFieldIndex = -1;
+                isDraggingStroke = NO;
+            }
             
             [self setNeedsDisplay:YES];
             return;
@@ -658,12 +669,17 @@
         NSLog(@"DrawView: mouseDragged detected regular mouse event at point: %@", NSStringFromPoint(viewPoint));
         
         // Check if we need to start dragging a text field
-        if (!isDraggingStroke && selectedTextFieldIndex >= 0 && isEditingText) {
-            // Exit edit mode to allow dragging
-            [self finishTextInput];
-            
+        // We can drag if we have a text field selected (selectedTextFieldIndex >= 0)
+        // This happens on first click of a text field, even though we're also editing
+        if (!isDraggingStroke && selectedTextFieldIndex >= 0) {
             // Start dragging the text field
             isDraggingStroke = YES;
+            
+            // Exit edit mode when we start dragging
+            if (isEditingText) {
+                [self finishTextInput];
+            }
+            
             NSLog(@"DrawView: Started dragging text field");
         }
         
