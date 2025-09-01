@@ -1,6 +1,7 @@
 #import "DrawView.h"
 #import "TabletEvents.h"
 #import "TabletApplication.h"
+#import "UndoCommand.h"
 
 // Custom text field that properly handles ESC key
 @interface EscapeHandlingTextField : NSTextField
@@ -71,6 +72,10 @@
         undoPaths = [[NSMutableArray alloc] init];
         undoPathColors = [[NSMutableArray alloc] init];
         undoStrokeMarkers = [[NSMutableArray alloc] init];
+        
+        // Initialize command-based undo/redo stacks
+        undoStack = [[NSMutableArray alloc] init];
+        redoStack = [[NSMutableArray alloc] init];
         
         // Load colors from NSUserDefaults or use defaults if none are stored
         [self loadColorsFromUserDefaults];
@@ -414,6 +419,7 @@
                 isStrokeSelected = NO;
                 isDraggingStroke = NO;  // Don't set to YES yet - wait for actual drag
                 dragStartPoint = viewPoint;
+                dragOriginalPosition = [clickedTextField frame].origin; // Store original position for undo
             } else {
                 // Already editing - clear drag preparation so drag will select text
                 selectedTextFieldIndex = -1;
@@ -770,10 +776,29 @@
             [straightLinePath release];
             straightLinePath = nil;
             
+            // Create add stroke command for undo
+            NSMutableArray *strokePaths = [NSMutableArray array];
+            NSMutableArray *strokeColors = [NSMutableArray array];
+            
+            // Get the last stroke's segments
+            NSInteger markerIndex = [strokeMarkers count] - 1;
+            NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
+            NSInteger endIndex = [paths count] - 1;
+            
+            for (NSInteger i = startIndex; i <= endIndex; i++) {
+                [strokePaths addObject:[paths objectAtIndex:i]];
+                [strokeColors addObject:[pathColors objectAtIndex:i]];
+            }
+            
+            AddStrokeCommand *command = [[AddStrokeCommand alloc] initWithDrawView:self 
+                                                                             paths:strokePaths 
+                                                                            colors:strokeColors 
+                                                                       markerIndex:markerIndex];
+            [undoStack addObject:command];
+            [command release];
+            
             // Clear the redo stack since we've added a new stroke
-            [undoPaths removeAllObjects];
-            [undoPathColors removeAllObjects];
-            [undoStrokeMarkers removeAllObjects];
+            [redoStack removeAllObjects];
             
             NSLog(@"DrawView: Completed straight line from %@ to %@", 
                   NSStringFromPoint(straightLineStartPoint), 
@@ -786,14 +811,33 @@
                 [currentPath release];
                 currentPath = nil;
                 
-                // Only clear the redo stack if we've actually drawn something new
-                if ([paths count] > 0) {
-                    // Clear the redo stack since we've added new paths
-                    [undoPaths removeAllObjects];
-                    [undoPathColors removeAllObjects];
-                    [undoStrokeMarkers removeAllObjects];
+                // Only create command if we've actually drawn something new
+                if ([paths count] > 0 && [strokeMarkers count] > 0) {
+                    // Create add stroke command for the completed stroke
+                    NSMutableArray *strokePaths = [NSMutableArray array];
+                    NSMutableArray *strokeColors = [NSMutableArray array];
                     
-                    NSLog(@"DrawView: Cleared redo stack due to new stroke");
+                    // Get the last stroke's segments
+                    NSInteger markerIndex = [strokeMarkers count] - 1;
+                    NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
+                    NSInteger endIndex = [paths count] - 1;
+                    
+                    for (NSInteger i = startIndex; i <= endIndex; i++) {
+                        [strokePaths addObject:[paths objectAtIndex:i]];
+                        [strokeColors addObject:[pathColors objectAtIndex:i]];
+                    }
+                    
+                    AddStrokeCommand *command = [[AddStrokeCommand alloc] initWithDrawView:self 
+                                                                                     paths:strokePaths 
+                                                                                    colors:strokeColors 
+                                                                               markerIndex:markerIndex];
+                    [undoStack addObject:command];
+                    [command release];
+                    
+                    // Clear the redo stack since we've added new paths
+                    [redoStack removeAllObjects];
+                    
+                    NSLog(@"DrawView: Added stroke to undo stack and cleared redo stack");
                 }
                 
                 NSLog(@"DrawView: Finished stroke, total segments: %lu", (unsigned long)[paths count]);
@@ -889,50 +933,16 @@
     
     // Only save to undo stack if there are paths or text fields to save
     if (pathCount > 0 || textFieldCount > 0) {
-        // Make a deep copy of the current drawing state for undo/redo
-        NSMutableArray *savedPaths = [[NSMutableArray alloc] initWithCapacity:pathCount];
-        NSMutableArray *savedColors = [[NSMutableArray alloc] initWithCapacity:pathCount];
-        NSMutableArray *savedMarkers = [strokeMarkers mutableCopy];
+        // Create clear all command
+        ClearAllCommand *command = [[ClearAllCommand alloc] initWithDrawView:self];
+        [command execute];
         
-        // Copy all paths and colors (deep copy)
-        for (NSInteger i = 0; i < pathCount; i++) {
-            NSBezierPath *pathCopy = [[paths objectAtIndex:i] copy];
-            NSColor *colorCopy = [[pathColors objectAtIndex:i] copy];
-            
-            [savedPaths addObject:pathCopy];
-            [savedColors addObject:colorCopy];
-            
-            [pathCopy release];
-            [colorCopy release];
-        }
+        // Add to undo stack
+        [undoStack addObject:command];
+        [command release];
         
-        // Save text fields too
-        NSMutableArray *savedTextFields = [textFields mutableCopy];
-        NSMutableArray *savedTextFieldColors = [textFieldColors mutableCopy];
-        
-        // Create a special clear operation container that holds the entire drawing state
-        NSMutableDictionary *clearState = [NSMutableDictionary dictionaryWithObjectsAndKeys:
-                                        savedPaths, @"paths",
-                                        savedColors, @"colors",
-                                        savedMarkers, @"markers",
-                                        savedTextFields, @"textFields",
-                                        savedTextFieldColors, @"textFieldColors",
-                                        nil];
-        
-        // Store a single clear operation record in the undo stack
-        // (we don't use the normal undoPaths/undoPathColors for the clear operation)
-        [undoStrokeMarkers addObject:clearState];
-        
-        // Release the temp arrays since they're now retained by the dictionary
-        [savedPaths release];
-        [savedColors release];
-        [savedMarkers release];
-        [savedTextFields release];
-        [savedTextFieldColors release];
-        
-        // Now clear the current state
-        [paths removeAllObjects];
-        [pathColors removeAllObjects];
+        // Clear redo stack
+        [redoStack removeAllObjects];
         [strokeMarkers removeAllObjects];
         
         // Remove all text field subviews
@@ -1079,31 +1089,12 @@
 
 // Check if there's something to undo
 - (BOOL)canUndo {
-    return ([paths count] > 0 && [strokeMarkers count] > 0) || [textFields count] > 0;
+    return [undoStack count] > 0;
 }
 
 // Check if there's something to redo
 - (BOOL)canRedo {
-    if ([undoTextFields count] > 0) {
-        return YES;
-    }
-    
-    if ([undoStrokeMarkers count] > 0) {
-        id markerObject = [undoStrokeMarkers lastObject];
-        
-        // For a clear operation marker (dictionary)
-        if ([markerObject isKindOfClass:[NSDictionary class]]) {
-            // For clear operations, we just need to check if the marker exists
-            return YES;
-        }
-        // For a regular stroke marker (number)
-        else if ([markerObject isKindOfClass:[NSNumber class]]) {
-            NSInteger segmentCount = [markerObject integerValue];
-            return [undoPaths count] >= segmentCount;
-        }
-    }
-    
-    return NO;
+    return [redoStack count] > 0;
 }
 
 // Handle proximity notification from tablet
@@ -1267,59 +1258,20 @@
     NSInteger markerIndex = [self findStrokeAtPoint:point];
     
     if (markerIndex >= 0) {
-        NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
-        NSInteger endIndex;
-        
-        // Determine the end index of this stroke
-        if (markerIndex < [strokeMarkers count] - 1) {
-            endIndex = [[strokeMarkers objectAtIndex:markerIndex + 1] integerValue] - 1;
-        } else {
-            endIndex = [paths count] - 1;
-        }
-        
         NSLog(@"DrawView: Found stroke to erase at marker index: %ld", (long)markerIndex);
         
-        // Store the stroke info for undo
-        NSInteger segmentCount = endIndex - startIndex + 1;
-        [undoStrokeMarkers addObject:[NSNumber numberWithInteger:segmentCount]];
+        // Create erase command and execute it
+        EraseStrokeCommand *command = [[EraseStrokeCommand alloc] initWithDrawView:self strokeMarkerIndex:markerIndex];
+        [command execute];
         
-        // Move each path segment in the stroke to the undo stack (in reverse to maintain order)
-        for (NSInteger j = endIndex; j >= startIndex; j--) {
-            // Get the path and color at this index
-            NSBezierPath *pathToUndo = [[paths objectAtIndex:j] retain];
-            NSColor *colorToUndo = [[pathColors objectAtIndex:j] retain];
-            
-            // Add to undo stacks
-            [undoPaths addObject:pathToUndo];
-            [undoPathColors addObject:colorToUndo];
-            
-            // Release our retained copies
-            [pathToUndo release];
-            [colorToUndo release];
-        }
+        // Add to undo stack
+        [undoStack addObject:command];
+        [command release];
         
-        // Remove the segments from the current paths
-        NSRange removeRange = NSMakeRange(startIndex, segmentCount);
-        [paths removeObjectsInRange:removeRange];
-        [pathColors removeObjectsInRange:removeRange];
+        // Clear redo stack
+        [redoStack removeAllObjects];
         
-        // Update markers after this one (they all need to be shifted)
-        for (NSInteger j = markerIndex + 1; j < [strokeMarkers count]; j++) {
-            NSInteger oldIndex = [[strokeMarkers objectAtIndex:j] integerValue];
-            [strokeMarkers replaceObjectAtIndex:j 
-                                    withObject:[NSNumber numberWithInteger:oldIndex - segmentCount]];
-        }
-        
-        // Remove the marker for this stroke
-        [strokeMarkers removeObjectAtIndex:markerIndex];
-        
-        // Invalidate cache since stroke was erased
-        [self invalidateStrokeCache];
-        
-        // Redraw
-        [self setNeedsDisplay:YES];
-        
-        NSLog(@"DrawView: Erased stroke with %ld segments", (long)segmentCount);
+        NSLog(@"DrawView: Erased stroke using command pattern");
     } else {
         NSLog(@"DrawView: No stroke found at point to erase");
     }
@@ -1330,34 +1282,18 @@
     NSInteger textIndex = [self findTextFieldAtPoint:point];
     
     if (textIndex >= 0 && textIndex < [textFields count]) {
-        // Save to undo stack
-        NSTextField *textFieldToUndo = [[textFields objectAtIndex:textIndex] retain];
-        NSColor *colorToUndo = [[textFieldColors objectAtIndex:textIndex] retain];
+        // Create erase text command and execute it
+        EraseTextCommand *command = [[EraseTextCommand alloc] initWithDrawView:self textFieldIndex:textIndex];
+        [command execute];
         
-        [undoTextFields addObject:textFieldToUndo];
-        [undoTextFieldColors addObject:colorToUndo];
+        // Add to undo stack
+        [undoStack addObject:command];
+        [command release];
         
-        // Remove the text field from view
-        [textFieldToUndo removeFromSuperview];
+        // Clear redo stack
+        [redoStack removeAllObjects];
         
-        [textFieldToUndo release];
-        [colorToUndo release];
-        
-        // Remove from arrays
-        [textFields removeObjectAtIndex:textIndex];
-        [textFieldColors removeObjectAtIndex:textIndex];
-        
-        // Clear selected text if it was erased
-        if (selectedTextFieldIndex == textIndex) {
-            selectedTextFieldIndex = -1;
-        } else if (selectedTextFieldIndex > textIndex) {
-            selectedTextFieldIndex--;
-        }
-        
-        // Redraw
-        [self setNeedsDisplay:YES];
-        
-        NSLog(@"DrawView: Erased text annotation at index %ld", (long)textIndex);
+        NSLog(@"DrawView: Erased text annotation using command pattern");
     }
 }
 
@@ -1471,79 +1407,18 @@
 
 // Undo the last complete stroke
 - (void)undo {
-    // Check if there are any paths or text to undo
-    if ([self canUndo]) {
-        // Determine what to undo - prioritize text if it was added most recently
-        BOOL undoText = NO;
+    if ([undoStack count] > 0) {
+        UndoCommand *command = [[undoStack lastObject] retain];
+        [undoStack removeLastObject];
         
-        // Simple heuristic: if there's text fields and no strokes, undo text field
-        // Or if there are both, undo text field (since we don't track chronological order yet)
-        if ([textFields count] > 0) {
-            undoText = YES;
-        }
+        // Perform the undo
+        [command undo];
         
-        if (undoText && [textFields count] > 0) {
-            // Undo the last text field
-            NSTextField *textFieldToUndo = [[textFields lastObject] retain];
-            NSColor *colorToUndo = [[textFieldColors lastObject] retain];
-            
-            // Remove from view
-            [textFieldToUndo removeFromSuperview];
-            
-            // Add to undo stacks
-            [undoTextFields addObject:textFieldToUndo];
-            [undoTextFieldColors addObject:colorToUndo];
-            
-            // Remove from current
-            [textFields removeLastObject];
-            [textFieldColors removeLastObject];
-            
-            [textFieldToUndo release];
-            [colorToUndo release];
-            
-            NSLog(@"DrawView: Undo performed, removed text field");
-        }
-        else if ([paths count] > 0 && [strokeMarkers count] > 0) {
-            // Get the marker for the last stroke
-            NSInteger markerIndex = [strokeMarkers count] - 1;
-            NSInteger startIndex = [[strokeMarkers objectAtIndex:markerIndex] integerValue];
-            NSInteger endIndex = [paths count] - 1;
-            NSInteger segmentCount = endIndex - startIndex + 1;
-            
-            // Store the start index in the undo markers stack
-            [undoStrokeMarkers addObject:[NSNumber numberWithInteger:segmentCount]];
-            
-            // Move each path segment in the stroke to the undo stack (in reverse to maintain order)
-            for (NSInteger i = endIndex; i >= startIndex; i--) {
-                // Get the path and color at this index
-                NSBezierPath *pathToUndo = [[paths objectAtIndex:i] retain];
-                NSColor *colorToUndo = [[pathColors objectAtIndex:i] retain];
-                
-                // Add to undo stacks
-                [undoPaths addObject:pathToUndo];
-                [undoPathColors addObject:colorToUndo];
-                
-                // Release our retained copies
-                [pathToUndo release];
-                [colorToUndo release];
-            }
-            
-            // Remove the segments from the current paths
-            NSRange removeRange = NSMakeRange(startIndex, segmentCount);
-            [paths removeObjectsInRange:removeRange];
-            [pathColors removeObjectsInRange:removeRange];
-            
-            // Remove the marker for this stroke
-            [strokeMarkers removeObjectAtIndex:markerIndex];
-            
-            NSLog(@"DrawView: Undo performed, removed stroke with %ld segments", (long)segmentCount);
-        }
+        // Add to redo stack
+        [redoStack addObject:command];
+        [command release];
         
-        // Invalidate cache since strokes changed
-        [self invalidateStrokeCache];
-        
-        // Redraw
-        [self setNeedsDisplay:YES];
+        NSLog(@"DrawView: Undo performed - %@", [command description]);
     } else {
         NSLog(@"DrawView: Nothing to undo");
     }
@@ -1551,158 +1426,18 @@
 
 // Redo the last undone stroke
 - (void)redo {
-    NSLog(@"DrawView: Redo requested. undoPaths count: %lu, undoStrokeMarkers count: %lu", 
-          (unsigned long)[undoPaths count], (unsigned long)[undoStrokeMarkers count]);
-    
-    // Check if there are any paths to redo
-    if ([self canRedo]) {
-        // Check if we have text fields to redo first
-        if ([undoTextFields count] > 0) {
-            // Redo the last text field
-            NSTextField *textFieldToRedo = [[undoTextFields lastObject] retain];
-            NSColor *colorToRedo = [[undoTextFieldColors lastObject] retain];
-            
-            // Add back to view
-            [self addSubview:textFieldToRedo];
-            
-            // Add back to current arrays
-            [textFields addObject:textFieldToRedo];
-            [textFieldColors addObject:colorToRedo];
-            
-            // Remove from undo stacks
-            [undoTextFields removeLastObject];
-            [undoTextFieldColors removeLastObject];
-            
-            [textFieldToRedo release];
-            [colorToRedo release];
-            
-            NSLog(@"DrawView: Redo performed, restored text field");
-            [self setNeedsDisplay:YES];
-            return;
-        }
+    if ([redoStack count] > 0) {
+        UndoCommand *command = [[redoStack lastObject] retain];
+        [redoStack removeLastObject];
         
-        // Get the marker object for the stroke to redo
-        id markerObject = [undoStrokeMarkers lastObject];
+        // Perform the redo
+        [command execute];
         
-        // Check if this is a clear operation (marker is a dictionary) or a regular stroke (marker is a number)
-        BOOL isClearOperation = [markerObject isKindOfClass:[NSDictionary class]];
+        // Add back to undo stack
+        [undoStack addObject:command];
+        [command release];
         
-        if (isClearOperation) {
-            // This is a restoration of a cleared drawing
-            NSDictionary *clearState = (NSDictionary *)markerObject;
-            
-            // Get the saved drawing state from the clear operation
-            NSArray *savedPaths = [clearState objectForKey:@"paths"];
-            NSArray *savedColors = [clearState objectForKey:@"colors"];
-            NSArray *savedMarkers = [clearState objectForKey:@"markers"];
-            NSArray *savedTextFields = [clearState objectForKey:@"textFields"];
-            NSArray *savedTextFieldColors = [clearState objectForKey:@"textFieldColors"];
-            
-            NSInteger pathCount = [savedPaths count];
-            
-            NSLog(@"DrawView: Detected redo of a clear operation with %ld paths", (long)pathCount);
-            
-            // Create an undo record of the current state before replacing it
-            // Only if we have paths to save
-            if ([paths count] > 0) {
-                for (NSInteger i = [paths count] - 1; i >= 0; i--) {
-                    NSBezierPath *pathToSave = [[paths objectAtIndex:i] retain];
-                    NSColor *colorToSave = [[pathColors objectAtIndex:i] retain];
-                    
-                    [undoPaths addObject:pathToSave];
-                    [undoPathColors addObject:colorToSave];
-                    
-                    [pathToSave release];
-                    [colorToSave release];
-                }
-                
-                // Save the count of the current state's paths
-                [undoStrokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
-            }
-            
-            // Clear the current state
-            [paths removeAllObjects];
-            [pathColors removeAllObjects];
-            [strokeMarkers removeAllObjects];
-            
-            // Restore the saved state (make deep copies to avoid issues)
-            for (NSInteger i = 0; i < pathCount; i++) {
-                NSBezierPath *pathCopy = [[savedPaths objectAtIndex:i] copy];
-                NSColor *colorCopy = [[savedColors objectAtIndex:i] copy];
-                
-                [paths addObject:pathCopy];
-                [pathColors addObject:colorCopy];
-                
-                [pathCopy release];
-                [colorCopy release];
-            }
-            
-            // Restore the markers
-            for (NSNumber *marker in savedMarkers) {
-                [strokeMarkers addObject:marker];
-            }
-            
-            // Restore text fields if they exist
-            if (savedTextFields && savedTextFieldColors) {
-                for (NSInteger i = 0; i < [savedTextFields count]; i++) {
-                    NSTextField *textField = [savedTextFields objectAtIndex:i];
-                    [self addSubview:textField];
-                    [textFields addObject:textField];
-                    [textFieldColors addObject:[savedTextFieldColors objectAtIndex:i]];
-                }
-            }
-            
-            // Remove the clear state marker from the undo stack
-            [undoStrokeMarkers removeLastObject];
-            
-            NSLog(@"DrawView: Redo of clear operation performed, restored %ld paths with %lu stroke markers", 
-                  (long)pathCount, (unsigned long)[strokeMarkers count]);
-        } else {
-            // This is a regular stroke (marker is a number)
-            NSInteger segmentCount = [markerObject integerValue];
-            
-            NSLog(@"DrawView: Attempting to redo regular stroke with %ld segments", (long)segmentCount);
-            
-            // Check if we have enough segments in the undo stack
-            if ([undoPaths count] >= segmentCount) {
-                // Add a marker for where this stroke starts in the paths array
-                [strokeMarkers addObject:[NSNumber numberWithInteger:[paths count]]];
-                
-                // Move the paths and colors back (in reverse because we stored them in reverse)
-                for (NSInteger i = 0; i < segmentCount; i++) {
-                    NSInteger undoIndex = [undoPaths count] - 1;
-                    
-                    // Get the path and color to redo
-                    NSBezierPath *pathToRedo = [[undoPaths objectAtIndex:undoIndex] retain];
-                    NSColor *colorToRedo = [[undoPathColors objectAtIndex:undoIndex] retain];
-                    
-                    // Add to active paths
-                    [paths addObject:pathToRedo];
-                    [pathColors addObject:colorToRedo];
-                    
-                    // Remove from undo stacks
-                    [undoPaths removeObjectAtIndex:undoIndex];
-                    [undoPathColors removeObjectAtIndex:undoIndex];
-                    
-                    // Release our retained copies
-                    [pathToRedo release];
-                    [colorToRedo release];
-                }
-                
-                // Remove the marker for this stroke from undo stack
-                [undoStrokeMarkers removeLastObject];
-                
-                NSLog(@"DrawView: Redo of normal stroke performed, restored stroke with %ld segments", (long)segmentCount);
-            } else {
-                NSLog(@"DrawView: Error - not enough paths in undo stack to redo");
-            }
-        }
-        
-        // Invalidate cache since strokes changed
-        [self invalidateStrokeCache];
-        
-        // Redraw
-        [self setNeedsDisplay:YES];
+        NSLog(@"DrawView: Redo performed - %@", [command description]);
     } else {
         NSLog(@"DrawView: Nothing to redo");
     }
@@ -1924,6 +1659,9 @@
     [textFieldColors release];
     [undoTextFields release];
     [undoTextFieldColors release];
+    if (originalTextContent) {
+        [originalTextContent release];
+    }
     
     // Clean up cache
     if (cachedStrokesLayer) {
@@ -2468,19 +2206,39 @@
         
         // Only add to arrays if it's a new text field
         if (!isExistingTextField) {
-            // Add to arrays for tracking
-            [textFields addObject:activeTextField];
-            [textFieldColors addObject:strokeColor];
+            // Create add text command
+            AddTextCommand *command = [[AddTextCommand alloc] initWithDrawView:self 
+                                                                      textField:activeTextField 
+                                                                          color:strokeColor];
+            [command execute];
+            
+            // Add to undo stack
+            [undoStack addObject:command];
+            [command release];
+            
+            // Clear redo stack
+            [redoStack removeAllObjects];
             
             // Retain the text field since we're keeping it
             [activeTextField retain];
             
-            // Clear redo stacks
-            [undoTextFields removeAllObjects];
-            [undoTextFieldColors removeAllObjects];
-            
             NSLog(@"Added new text field: %@", text);
         } else {
+            // Check if text actually changed
+            if (originalTextContent && ![originalTextContent isEqualToString:text]) {
+                // Create edit text command
+                EditTextCommand *command = [[EditTextCommand alloc] initWithDrawView:self 
+                                                                            textField:activeTextField 
+                                                                              oldText:originalTextContent 
+                                                                              newText:text];
+                
+                // Add to undo stack
+                [undoStack addObject:command];
+                [command release];
+                
+                // Clear redo stack
+                [redoStack removeAllObjects];
+            }
             NSLog(@"Updated existing text field: %@", text);
         }
     } else {
@@ -2499,6 +2257,8 @@
     // Clean up active reference
     [activeTextField release];
     activeTextField = nil;
+    [originalTextContent release];
+    originalTextContent = nil;
     isEditingText = NO;
     
     // Completely exit text mode and restore normal operation
@@ -2533,19 +2293,39 @@
         
         // Only add to arrays if it's a new text field
         if (!isExistingTextField) {
-            // Add to arrays for tracking
-            [textFields addObject:activeTextField];
-            [textFieldColors addObject:strokeColor];
+            // Create add text command
+            AddTextCommand *command = [[AddTextCommand alloc] initWithDrawView:self 
+                                                                      textField:activeTextField 
+                                                                          color:strokeColor];
+            [command execute];
+            
+            // Add to undo stack
+            [undoStack addObject:command];
+            [command release];
+            
+            // Clear redo stack
+            [redoStack removeAllObjects];
             
             // Retain the text field since we're keeping it
             [activeTextField retain];
             
-            // Clear redo stacks
-            [undoTextFields removeAllObjects];
-            [undoTextFieldColors removeAllObjects];
-            
             NSLog(@"Added new text field: %@", text);
         } else {
+            // Check if text actually changed
+            if (originalTextContent && ![originalTextContent isEqualToString:text]) {
+                // Create edit text command
+                EditTextCommand *command = [[EditTextCommand alloc] initWithDrawView:self 
+                                                                            textField:activeTextField 
+                                                                              oldText:originalTextContent 
+                                                                              newText:text];
+                
+                // Add to undo stack
+                [undoStack addObject:command];
+                [command release];
+                
+                // Clear redo stack
+                [redoStack removeAllObjects];
+            }
             NSLog(@"Updated existing text field: %@", text);
         }
     } else {
@@ -2564,6 +2344,8 @@
     // Clean up current reference
     [activeTextField release];
     activeTextField = nil;
+    [originalTextContent release];
+    originalTextContent = nil;
     
     // Calculate position for new text area below current one
     // Use the current text size plus some line spacing
@@ -2585,6 +2367,8 @@
     [activeTextField removeFromSuperview];
     [activeTextField release];
     activeTextField = nil;
+    [originalTextContent release];
+    originalTextContent = nil;
     isEditingText = NO;
     
     // Restore window to ignore mouse events and normal cursor

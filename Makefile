@@ -6,7 +6,7 @@ PRODUCT_NAME = Wacom Overlay
 EXECUTABLE_NAME = WacomOverlay
 MACOSX_DEPLOYMENT_TARGET = 10.9
 
-SOURCES = main.m AppDelegate.m TabletApplication.m TabletEvents.m OverlayWindow.m DrawView.m ControlPanel.m
+SOURCES = main.m AppDelegate.m TabletApplication.m TabletEvents.m OverlayWindow.m DrawView.m ControlPanel.m UndoCommand.m
 OBJECTS = $(SOURCES:.m=.o)
 APP_DIR = $(PRODUCT_NAME).app
 CONTENTS_DIR = $(APP_DIR)/Contents

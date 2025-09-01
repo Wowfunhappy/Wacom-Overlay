@@ -2,6 +2,8 @@
 #import <QuartzCore/QuartzCore.h>
 #import "AppDelegate.h"
 
+@class UndoCommand;
+
 @interface DrawView : NSView <NSTextFieldDelegate> {
     NSMutableArray *paths;
     NSMutableArray *pathColors;
@@ -9,6 +11,10 @@
     NSMutableArray *undoPaths;
     NSMutableArray *undoPathColors;
     NSMutableArray *undoStrokeMarkers;
+    
+    // Command-based undo/redo system
+    NSMutableArray *undoStack;
+    NSMutableArray *redoStack;
     NSBezierPath *currentPath;
     NSColor *strokeColor;
     CGFloat lineWidth;
@@ -24,6 +30,7 @@
     BOOL isStrokeSelected;
     BOOL isDraggingStroke;
     NSPoint dragStartPoint;
+    NSPoint dragOriginalPosition; // Track original position for undo
     NSMutableArray *relatedStrokeIndices; // For tracking connected strokes (same color, intersecting)
     
     // Straight line drawing variables
@@ -40,6 +47,7 @@
     BOOL isTextInputMode;
     BOOL isEditingText;
     NSTextField *activeTextField;
+    NSString *originalTextContent; // Track original text for undo
     NSInteger selectedTextFieldIndex;
     NSPoint textInputPosition;
     NSInteger originalWindowLevel;
