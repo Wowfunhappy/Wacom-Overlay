@@ -107,8 +107,12 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         }
         // For other mouse events, handle dragging if we have a selected stroke
         else if (type == kCGEventLeftMouseDragged) {
-            // If we're already dragging a stroke, continue the drag operation
-            if ([[drawView valueForKey:@"isDraggingStroke"] boolValue]) {
+            // Forward drag events if we're dragging OR if we have a text field selected (might start dragging)
+            BOOL isDragging = [[drawView valueForKey:@"isDraggingStroke"] boolValue];
+            BOOL isEditingText = [[drawView valueForKey:@"isEditingText"] boolValue];
+            NSInteger selectedTextField = [[drawView valueForKey:@"selectedTextFieldIndex"] integerValue];
+            
+            if (isDragging || (isEditingText && selectedTextField >= 0)) {
                 [drawView mouseEvent:nsEvent];
                 return NULL; // Capture during drag
             }

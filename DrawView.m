@@ -659,6 +659,9 @@
         
         // Check if we need to start dragging a text field
         if (!isDraggingStroke && selectedTextFieldIndex >= 0 && isEditingText) {
+            // Exit edit mode to allow dragging
+            [self finishTextInput];
+            
             // Start dragging the text field
             isDraggingStroke = YES;
             NSLog(@"DrawView: Started dragging text field");
