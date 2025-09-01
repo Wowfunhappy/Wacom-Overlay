@@ -12,4 +12,4 @@ These shortcuts must come from a Wacom tablet, such as via an express key:
 ⇧⌘Z		Redo
 ⌘Z (hold) 		Clear drawing
 ⌘D			Switch color
-F14			Use pen as mouse
+F14 (hold)		Use pen as mouse

@@ -9,17 +9,9 @@
 
 @implementation AppDelegate
 
-@synthesize overlayWindow;
-@synthesize controlPanel;
-@synthesize drawView;
-@synthesize wacomDriverPID;
-@synthesize statusItem;
-@synthesize lastUndoKeyTime;
-@synthesize isUndoKeyDown;
-@synthesize isNormalModeKeyDown;
-@synthesize undoHoldTimer;
+@synthesize overlayWindow, controlPanel, drawView, wacomDriverPID;
+@synthesize statusItem, lastUndoKeyTime, isUndoKeyDown, isNormalModeKeyDown, undoHoldTimer;
 
-// Find the Wacom Tablet Driver PID
 - (pid_t)findWacomDriverPID {
     pid_t wacomPID = 0;
     FILE *fp = popen("ps -ax | grep '/Library/Application\\ Support/Tablet/WacomTabletDriver.app/' | grep -v grep", "r");
@@ -30,481 +22,286 @@
         }
         pclose(fp);
     }
-    NSLog(@"Found Wacom Tablet Driver with PID: %d", (int)wacomPID);
     return wacomPID;
 }
 
-// Define a global to track which events are handled by event tap
-static BOOL g_handledByEventTap = NO;
+#pragma mark - Event Handling Helpers
 
-// Event tap callback function
-static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *userInfo) {
-    AppDelegate *appDelegate = (AppDelegate *)userInfo;
-    
-    // Check if the event tap was disabled by timeout or system
-    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
-        NSLog(@"WARNING: Event tap was disabled! Re-enabling...");
-        CGEventTapEnable(appDelegate->eventTap, true);
-        return event;
+- (BOOL)parseModifierFlags:(NSUInteger)flags cmd:(BOOL *)cmd shift:(BOOL *)shift option:(BOOL *)option {
+    if (cmd) *cmd = (flags & (1 << 20)) != 0;
+    if (shift) *shift = (flags & (1 << 17)) != 0;  
+    if (option) *option = (flags & (1 << 19)) != 0;
+    return YES;
+}
+
+- (DrawView *)getDrawView {
+    if (drawView) return drawView;
+    TabletApplication *app = (TabletApplication *)NSApp;
+    OverlayWindow *window = [app overlayWindow];
+    return window ? (DrawView *)[window contentView] : nil;
+}
+
+- (BOOL)handleTabletEvent:(NSEvent *)nsEvent type:(CGEventType)type {
+    if ([nsEvent isTabletProximityEvent]) {
+        TabletApplication *app = (TabletApplication *)NSApp;
+        if ([app respondsToSelector:@selector(handleProximityEvent:)]) {
+            [app handleProximityEvent:nsEvent];
+        }
+        return YES;
     }
     
-    // Reset handled flag for each new event
-    g_handledByEventTap = NO;
-    
-    // Convert to NSEvent to check event type
-    NSEvent *nsEvent = [NSEvent eventWithCGEvent:event];
-    
-    // Check if this is a tablet event
-    if ([nsEvent isTabletPointerEvent] || [nsEvent isTabletProximityEvent]) {
-        NSLog(@"CG Event tap captured tablet event: %lld", (long long)type);
-        
-        // Handle tablet proximity events (pen entering/leaving tablet)
-        if ([nsEvent isTabletProximityEvent]) {
-            NSLog(@"Tablet proximity event detected");
-            
-            // Forward to TabletApplication for handling
-            TabletApplication *app = (TabletApplication *)NSApp;
-            if ([app respondsToSelector:@selector(handleProximityEvent:)]) {
-                [app handleProximityEvent:nsEvent];
-            }
-        }
-        
-        // Handle tablet pointer events (drawing)
-        if ([nsEvent isTabletPointerEvent]) {
-            // Note: With our TabletEvents.m changes, isTabletPointerEvent will
-            // already return false when F14 is pressed, so this condition won't be true in normal mode
-            NSLog(@"Tablet pointer event - forwarding to draw view");
-            
-            // Forward to our draw view
-            [appDelegate.drawView mouseEvent:nsEvent];
-            
-            // Prevent the event from propagating to other applications
-            return NULL; // Return NULL to stop event propagation
-        }
+    if ([nsEvent isTabletPointerEvent]) {
+        [[self getDrawView] mouseEvent:nsEvent];
+        return YES;
     }
-    // Handle mouse events (for selecting and dragging strokes)
-    else if (type == kCGEventLeftMouseDown || 
-             type == kCGEventLeftMouseDragged || 
-             type == kCGEventLeftMouseUp ||
-             type == kCGEventMouseMoved) {
-        
-        // Get our draw view
-        DrawView *drawView = appDelegate.drawView;
-        
-        // Handle mouse events appropriately
-        if (type == kCGEventLeftMouseDown) {
+    
+    return NO;
+}
+
+- (BOOL)handleMouseEvent:(NSEvent *)nsEvent type:(CGEventType)type {
+    DrawView *view = [self getDrawView];
+    
+    switch (type) {
+        case kCGEventLeftMouseDown:
             // Forward the click to DrawView to check for strokes and handle selection
-            [drawView mouseEvent:nsEvent];
+            [view mouseEvent:nsEvent];
             
             // Check if a stroke or text was actually selected
-            BOOL wasStrokeSelected = [[drawView valueForKey:@"isStrokeSelected"] boolValue];
-            BOOL isDragging = [[drawView valueForKey:@"isDraggingStroke"] boolValue];
+            BOOL wasStrokeSelected = [[view valueForKey:@"isStrokeSelected"] boolValue];
+            BOOL isDragging = [[view valueForKey:@"isDraggingStroke"] boolValue];
             
             if (wasStrokeSelected || isDragging) {
                 // A stroke or text was selected, capture the event
-                return NULL; // Return NULL to stop event propagation
+                return YES; // Block event propagation
             }
-        }
-        // For other mouse events, handle dragging if we have a selected stroke
-        else if (type == kCGEventLeftMouseDragged) {
-            BOOL isDragging = [[drawView valueForKey:@"isDraggingStroke"] boolValue];
-            BOOL isEditingText = [[drawView valueForKey:@"isEditingText"] boolValue];
-            NSInteger selectedTextField = [[drawView valueForKey:@"selectedTextFieldIndex"] integerValue];
+            return NO;
             
-            // Forward drag events if:
-            // 1. We're already dragging, OR
-            // 2. We have a text field selected (for potential dragging) but only if it's a new edit
+        case kCGEventLeftMouseDragged: {
+            BOOL isDragging = [[view valueForKey:@"isDraggingStroke"] boolValue];
+            BOOL isEditingText = [[view valueForKey:@"isEditingText"] boolValue];
+            NSInteger selectedTextField = [[view valueForKey:@"selectedTextFieldIndex"] integerValue];
+            
+            // Forward drag events if we're dragging or have a text field selected
             if (isDragging || (!isDragging && selectedTextField >= 0)) {
-                [drawView mouseEvent:nsEvent];
-                return NULL; // Capture during drag
+                [view mouseEvent:nsEvent];
+                return YES; // Capture during drag
             }
             
             // If we're editing text and no text field is selected for dragging,
             // let the drag through for text selection
             if (isEditingText && selectedTextField < 0) {
-                return event; // Let it through for text selection
+                return NO; // Let it through for text selection
             }
+            return NO;
         }
-        // For mouse up, complete any drag operation
-        else if (type == kCGEventLeftMouseUp) {
-            if ([[drawView valueForKey:@"isDraggingStroke"] boolValue]) {
-                [drawView mouseEvent:nsEvent];
-                // Let the event through after processing - this prevents the mouse from getting "stuck"
-                return event;
+            
+        case kCGEventLeftMouseUp:
+            if ([[view valueForKey:@"isDraggingStroke"] boolValue]) {
+                [view mouseEvent:nsEvent];
+                // Let the event through after processing - prevents mouse from getting "stuck"
+                return NO;
             }
-        }
-        // For mouse move events, let them through without any special handling
-        else if (type == kCGEventMouseMoved) {
-            // No cursor changing for hover feedback
-        }
+            return NO;
+            
+        default:
+            return NO;
     }
-    // Check if this is a keyboard event
-    else if (type == kCGEventKeyDown) {
-        NSLog(@"Key down event captured in event tap: %@", nsEvent);
+}
+
+- (BOOL)handleKeyboardEvent:(NSEvent *)nsEvent type:(CGEventType)type isFromWacom:(BOOL)isFromWacom {
+    if (!isFromWacom && type == kCGEventKeyDown) {
+        BOOL cmd, shift, option;
+        [self parseModifierFlags:[nsEvent modifierFlags] cmd:&cmd shift:&shift option:&option];
+        NSString *chars = [[nsEvent charactersIgnoringModifiers] lowercaseString];
         
-        // Get the source process ID of the event
-        pid_t eventSourcePID = CGEventGetIntegerValueField(event, kCGEventSourceUnixProcessID);
-        NSLog(@"EVENT TAP: Event source PID: %d, Wacom PID: %d", (int)eventSourcePID, (int)appDelegate.wacomDriverPID);
-        
-        // Only handle keyboard events from the Wacom driver
-        if (appDelegate.wacomDriverPID != 0 && eventSourcePID == appDelegate.wacomDriverPID) {
-            NSLog(@"EVENT TAP: Blocking ALL keyboard events from Wacom tablet");
-            
-            // First process the event by our app
-            NSUInteger flags = [nsEvent modifierFlags];
-            NSString *characters = [nsEvent charactersIgnoringModifiers];
-            
-            // In OS X 10.9, use the raw bit values
-            BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
-            BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-            BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
-            BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
-            BOOL isD = ([characters isEqualToString:@"D"] || [characters isEqualToString:@"d"]);
-            BOOL isT = ([characters isEqualToString:@"T"] || [characters isEqualToString:@"t"]);
-            
-            // Track whether we handled this event
-            BOOL eventHandled = NO;
-            
-            // Make sure the overlay window and drawing view are active
-            [appDelegate.overlayWindow orderFront:nil];
-            
-            // Get the draw view
-            DrawView *drawView = appDelegate.drawView;
-            if (!drawView) {
-                // Try to get the draw view if it's not directly available
-                TabletApplication *app = (TabletApplication *)NSApp;
-                OverlayWindow *window = [app overlayWindow];
-                if (window) {
-                    drawView = (DrawView *)[window contentView];
-                }
-            }
-            
-            if (drawView) {
-                // Handle F14 to temporarily act as a normal mouse while pressed
-                if ([nsEvent keyCode] == 107) { // F14 key code
-                    NSLog(@"EVENT TAP: F14 detected - temporarily disabling tablet interception");
-                    // Set the flag to indicate normal mode is active
-                    appDelegate.isNormalModeKeyDown = YES;
-                    
-                    // If pen is in proximity, immediately restore default cursor
-                    TabletApplication *app = (TabletApplication *)NSApp;
-                    id proximityValue = [app valueForKey:@"isPenInProximity"];
-                    BOOL isPenInProximity = [proximityValue boolValue];
-                    if (isPenInProximity) {
-                        // Get default cursor and set it
-                        NSCursor *defaultCursor = [app valueForKey:@"defaultCursor"];
-                        if (defaultCursor) {
-                            [defaultCursor set];
-                        }
-                    }
-                    
-                    eventHandled = YES;
-                } 
-                // Handle undo (Cmd+Z)
-                else if (isCommandDown && !isShiftDown && isZ) {
-                    // Get the current time
-                    NSDate *now = [NSDate date];
-                    
-                    // Mark that the undo key is down
-                    appDelegate.isUndoKeyDown = YES;
-                    
-                    // Cancel any existing timer
-                    if (appDelegate.undoHoldTimer) {
-                        [appDelegate.undoHoldTimer invalidate];
-                        appDelegate.undoHoldTimer = nil;
-                    }
-                    
-                    // Create a new timer that will trigger after holding the key for 0.5 seconds
-                    appDelegate.undoHoldTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
-                                                                      target:appDelegate
-                                                                    selector:@selector(undoKeyHoldTimerFired:)
-                                                                    userInfo:nil
-                                                                     repeats:NO];
-                    
-                    // Store the current time
-                    appDelegate.lastUndoKeyTime = [now retain];
-                    
-                    NSLog(@"EVENT TAP: Cmd+Z - undo detected, starting hold timer");
-                    
-                    // Perform a normal undo for the initial key press
-                    if ([drawView respondsToSelector:@selector(canUndo)] && 
-                        [drawView respondsToSelector:@selector(undo)]) {
-                        if ([drawView canUndo]) {
-                            [drawView undo];
-                        }
-                    }
-                    eventHandled = YES;
-                }
-                // Handle redo (Cmd+Shift+Z)
-                else if (isCommandDown && isShiftDown && isZ) {
-                    NSLog(@"EVENT TAP: Cmd+Shift+Z - redo detected");
-                    if ([drawView respondsToSelector:@selector(canRedo)] && 
-                        [drawView respondsToSelector:@selector(redo)]) {
-                        if ([drawView canRedo]) {
-                            [drawView redo];
-                        }
-                    }
-                    eventHandled = YES;
-                }
-                // Handle color toggle (Cmd+D)
-                else if (isCommandDown && isD && !isShiftDown) {
-                    NSLog(@"EVENT TAP: Cmd+D - color toggle detected");
-                    if ([drawView respondsToSelector:@selector(toggleToNextColor)]) {
-                        [drawView toggleToNextColor];
-                    }
-                    eventHandled = YES;
-                }
-                // Handle text input mode toggle (Cmd+Option+Shift+T)
-                else if (isCommandDown && isOptionDown && isShiftDown && isT) {
-                    NSLog(@"EVENT TAP: Cmd+Option+Shift+T - text input mode toggle detected");
-                    if ([drawView respondsToSelector:@selector(enterTextInputMode)]) {
-                        [drawView enterTextInputMode];
-                    }
-                    eventHandled = YES;
-                }
-            }
-            
-            // Only block the event if we actually handled it
-            if (eventHandled) {
-                NSLog(@"EVENT TAP: Blocking handled keyboard event from Wacom tablet");
-                return NULL;
-            } else {
-                NSLog(@"EVENT TAP: Passing through unhandled keyboard event from Wacom tablet");
-                return event;
-            }
-        } else {
-            NSLog(@"EVENT TAP: Keyboard event not from Wacom tablet - checking for text input shortcut");
-            
-            // Check for text input mode toggle from regular keyboard (Cmd+Option+Shift+T)
-            NSUInteger flags = [nsEvent modifierFlags];
-            NSString *characters = [nsEvent charactersIgnoringModifiers];
-            
-            BOOL isCommandDown = (flags & (1 << 20)) != 0;   // NSCommandKeyMask in 10.9
-            BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-            BOOL isOptionDown = (flags & (1 << 19)) != 0;    // NSAlternateKeyMask in 10.9
-            BOOL isT = ([characters isEqualToString:@"T"] || [characters isEqualToString:@"t"]);
-            
-            if (isCommandDown && isOptionDown && isShiftDown && isT) {
-                NSLog(@"EVENT TAP: Cmd+Option+Shift+T from regular keyboard - text input mode toggle detected");
-                
-                // Get the draw view
-                DrawView *drawView = appDelegate.drawView;
-                if (!drawView) {
-                    TabletApplication *app = (TabletApplication *)NSApp;
-                    OverlayWindow *window = [app overlayWindow];
-                    if (window) {
-                        drawView = (DrawView *)[window contentView];
-                    }
-                }
-                
-                if (drawView && [drawView respondsToSelector:@selector(enterTextInputMode)]) {
-                    [drawView enterTextInputMode];
-                }
-                
-                // Block this shortcut from being processed by other apps
-                return NULL;
-            }
+        if (cmd && option && shift && [chars isEqualToString:@"t"]) {
+            [[self getDrawView] enterTextInputMode];
+            return YES;
         }
+        return NO;
     }
-    // Handle key up events
-    else if (type == kCGEventKeyUp) {
-        // Get the source process ID of the event
-        pid_t eventSourcePID = CGEventGetIntegerValueField(event, kCGEventSourceUnixProcessID);
+    
+    if (!isFromWacom) return NO;
+    
+    NSUInteger keyCode = [nsEvent keyCode];
+    BOOL cmd, shift, option;
+    [self parseModifierFlags:[nsEvent modifierFlags] cmd:&cmd shift:&shift option:&option];
+    NSString *chars = [[nsEvent charactersIgnoringModifiers] lowercaseString];
+    
+    if (type == kCGEventKeyDown) {
+        if (keyCode == 107) { // F14
+            self.isNormalModeKeyDown = YES;
+            [self updateCursorForNormalMode:YES];
+            return YES;
+        }
         
-        // Only handle keyboard events from the Wacom driver
-        if (appDelegate.wacomDriverPID != 0 && eventSourcePID == appDelegate.wacomDriverPID) {
-            // Get event details
-            NSUInteger flags = [nsEvent modifierFlags];
-            NSString *characters = [nsEvent charactersIgnoringModifiers];
-            
-            // In OS X 10.9, use the raw bit values
-            BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-            BOOL isZ = ([characters isEqualToString:@"Z"] || [characters isEqualToString:@"z"]);
-            
-            // Track whether we handled this event
-            BOOL eventHandled = NO;
-            
-            // Handle F14 key up (normal mode toggle off) - we need to check actual key codes
-            // Since F14 key release might not match the same character representation
-            NSUInteger keyCode = [nsEvent keyCode];
-            if (keyCode == 107) { // F14 key code
-                NSLog(@"EVENT TAP: F14 key up detected - re-enabling tablet interception");
-                appDelegate.isNormalModeKeyDown = NO;
-                
-                // If pen is in proximity, restore custom cursor
-                TabletApplication *app = (TabletApplication *)NSApp;
-                id proximityValue = [app valueForKey:@"isPenInProximity"];
-                BOOL isPenInProximity = [proximityValue boolValue];
-                if (isPenInProximity) {
-                    // Get custom cursor and set it
-                    NSCursor *customCursor = [app valueForKey:@"customCursor"];
-                    if (customCursor) {
-                        [customCursor set];
-                    }
-                }
-                
-                eventHandled = YES;
-            }
-            // Check if this is the undo key releasing
-            else if (isZ && !isShiftDown) {
-                NSLog(@"EVENT TAP: Cmd+Z key up detected");
-                
-                // Mark undo key as no longer down
-                appDelegate.isUndoKeyDown = NO;
-                
-                // Cancel the hold timer if it exists
-                if (appDelegate.undoHoldTimer) {
-                    [appDelegate.undoHoldTimer invalidate];
-                    appDelegate.undoHoldTimer = nil;
-                }
-                
-                // Release the stored time
-                [appDelegate.lastUndoKeyTime release];
-                appDelegate.lastUndoKeyTime = nil;
-                
-                eventHandled = YES;
-            }
-            
-            // Only block the event if we actually handled it
-            if (eventHandled) {
-                NSLog(@"EVENT TAP: Blocking handled key up event from Wacom tablet");
-                return NULL;
-            } else {
-                NSLog(@"EVENT TAP: Passing through unhandled key up event from Wacom tablet");
-                return event;
-            }
+        if (cmd && !shift && [chars isEqualToString:@"z"]) {
+            [self handleUndoKeyDown];
+            return YES;
+        }
+        
+        if (cmd && shift && [chars isEqualToString:@"z"]) {
+            DrawView *view = [self getDrawView];
+            if ([view canRedo]) [view redo];
+            return YES;
+        }
+        
+        if (cmd && !shift && [chars isEqualToString:@"d"]) {
+            [[self getDrawView] toggleToNextColor];
+            return YES;
+        }
+        
+        if (cmd && option && shift && [chars isEqualToString:@"t"]) {
+            [[self getDrawView] enterTextInputMode];
+            return YES;
+        }
+    } else if (type == kCGEventKeyUp) {
+        if (keyCode == 107) { // F14
+            self.isNormalModeKeyDown = NO;
+            [self updateCursorForNormalMode:NO];
+            return YES;
+        }
+        
+        if ([chars isEqualToString:@"z"] && !shift) {
+            [self handleUndoKeyUp];
+            return YES;
         }
     }
     
-    // Let all other events through
+    return NO;
+}
+
+- (void)handleUndoKeyDown {
+    self.isUndoKeyDown = YES;
+    [self.undoHoldTimer invalidate];
+    self.undoHoldTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
+                                                          target:self
+                                                        selector:@selector(undoKeyHoldTimerFired:)
+                                                        userInfo:nil
+                                                         repeats:NO];
+    self.lastUndoKeyTime = [[NSDate date] retain];
+    
+    DrawView *view = [self getDrawView];
+    if ([view canUndo]) [view undo];
+}
+
+- (void)handleUndoKeyUp {
+    self.isUndoKeyDown = NO;
+    [self.undoHoldTimer invalidate];
+    self.undoHoldTimer = nil;
+    [self.lastUndoKeyTime release];
+    self.lastUndoKeyTime = nil;
+}
+
+- (void)updateCursorForNormalMode:(BOOL)normalMode {
+    TabletApplication *app = (TabletApplication *)NSApp;
+    BOOL isPenInProximity = [[app valueForKey:@"isPenInProximity"] boolValue];
+    if (!isPenInProximity) return;
+    
+    NSCursor *cursor = normalMode ? [app valueForKey:@"defaultCursor"] : [app valueForKey:@"customCursor"];
+    if (cursor) [cursor set];
+}
+
+- (void)undoKeyHoldTimerFired:(NSTimer *)timer {
+    if (self.isUndoKeyDown) {
+        [[self getDrawView] clear];
+    }
+}
+
+#pragma mark - Event Tap Callback
+
+static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *userInfo) {
+    AppDelegate *appDelegate = (AppDelegate *)userInfo;
+    
+    if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+        CGEventTapEnable(appDelegate->eventTap, true);
+        return event;
+    }
+    
+    NSEvent *nsEvent = [NSEvent eventWithCGEvent:event];
+    
+    // Check if this is a tablet event
+    if ([nsEvent isTabletPointerEvent] || [nsEvent isTabletProximityEvent]) {
+        if ([appDelegate handleTabletEvent:nsEvent type:type]) {
+            return NULL;
+        }
+    }
+    // Handle mouse events (for selecting and dragging strokes) - ONLY if not a tablet event
+    else if (type == kCGEventLeftMouseDown || 
+             type == kCGEventLeftMouseDragged || 
+             type == kCGEventLeftMouseUp ||
+             type == kCGEventMouseMoved) {
+        if ([appDelegate handleMouseEvent:nsEvent type:type]) {
+            return NULL;
+        }
+    }
+    
+    if (type == kCGEventKeyDown || type == kCGEventKeyUp) {
+        pid_t eventPID = CGEventGetIntegerValueField(event, kCGEventSourceUnixProcessID);
+        BOOL isFromWacom = (appDelegate.wacomDriverPID != 0 && eventPID == appDelegate.wacomDriverPID);
+        
+        if ([appDelegate handleKeyboardEvent:nsEvent type:type isFromWacom:isFromWacom]) {
+            return NULL;
+        }
+    }
+    
     return event;
 }
 
+#pragma mark - UI Setup
+
 - (NSRect)totalScreensRect {
     NSRect totalRect = NSZeroRect;
-    
     for (NSScreen *screen in [NSScreen screens]) {
-        // Use frame, not visibleFrame to cover menu bars, docks, etc.
-        NSRect screenRect = [screen frame];
-        
-        if (NSIsEmptyRect(totalRect)) {
-            totalRect = screenRect;
-        } else {
-            totalRect = NSUnionRect(totalRect, screenRect);
-        }
+        totalRect = NSIsEmptyRect(totalRect) ? [screen frame] : NSUnionRect(totalRect, [screen frame]);
     }
-    
-    // If somehow there are no screens, return main screen rect
-    if (NSIsEmptyRect(totalRect) && [NSScreen mainScreen]) {
-        totalRect = [[NSScreen mainScreen] frame];
-    }
-    
-    NSLog(@"Total screens rect: %@", NSStringFromRect(totalRect));
-    return totalRect;
+    return NSIsEmptyRect(totalRect) ? [[NSScreen mainScreen] frame] : totalRect;
 }
 
 - (void)updateOverlayWindowFrame {
-    // Get the union of all screen frames
-    NSRect totalScreensRect = [self totalScreensRect];
-    
-    // Update the window frame
-    [self.overlayWindow setFrame:totalScreensRect display:YES];
-    
-    NSLog(@"Updated overlay window frame to cover all screens: %@", NSStringFromRect(totalScreensRect));
+    [self.overlayWindow setFrame:[self totalScreensRect] display:YES];
 }
 
 - (void)setupStatusBarMenu {
-    // Create the status bar item
     self.statusItem = [[[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength] retain];
     
-    // Set the image for the status item
     NSString *menuIconPath = [[NSBundle mainBundle] pathForResource:@"menuIcon" ofType:@"png"];
-    NSImage *statusImage = nil;
-    
-    if (menuIconPath) {
-        statusImage = [[[NSImage alloc] initWithContentsOfFile:menuIconPath] autorelease];
-    }
+    NSImage *statusImage = menuIconPath ? [[[NSImage alloc] initWithContentsOfFile:menuIconPath] autorelease] : nil;
     
     if (statusImage) {
-        // First, create a proper template image that works with menu bar
         NSImage *templateImage = [[[NSImage alloc] initWithSize:NSMakeSize(18, 18)] autorelease];
-        
         [templateImage lockFocus];
-        
-        // Create a mask-friendly version (black and transparent only)
         [[NSColor blackColor] set];
-        
-        // Draw the original image as black silhouette
         [statusImage drawAtPoint:NSZeroPoint fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0];
-        
         [templateImage unlockFocus];
-        
-        // Mark as template image (macOS will automatically invert when selected)
         [templateImage setTemplate:YES];
-        
-        // Set as the status item image
         [statusItem setImage:templateImage];
-        
-        // Still enable highlight mode just to be sure
         [statusItem setHighlightMode:YES];
     } else {
-        // Fallback to text if image not found
         [statusItem setTitle:@"✏️"];
     }
     
-    // Create the menu
     NSMenu *menu = [[[NSMenu alloc] init] autorelease];
     
-    // 1. Clear Drawing
-    NSMenuItem *clearItem = [[[NSMenuItem alloc] initWithTitle:@"Clear Drawing" 
-                                                      action:@selector(clearDrawing:) 
-                                               keyEquivalent:@""] autorelease];
-    [clearItem setTarget:self];
-    [menu addItem:clearItem];
+    [menu addItemWithTitle:@"Clear Drawing" action:@selector(clearDrawing:) keyEquivalent:@""].target = self;
     
-    // 2. Change Color submenu
-    NSMenuItem *colorItem = [[[NSMenuItem alloc] initWithTitle:@"Change Color" 
-                                                      action:nil 
-                                               keyEquivalent:@""] autorelease];
-    colorMenu = [[NSMenu alloc] init]; // Store in our global variable
+    NSMenuItem *colorItem = [[[NSMenuItem alloc] initWithTitle:@"Change Color" action:nil keyEquivalent:@""] autorelease];
+    colorMenu = [[NSMenu alloc] init];
     [colorItem setSubmenu:colorMenu];
+    [colorMenu setDelegate:(id<NSMenuDelegate>)self];
     [menu addItem:colorItem];
     
-    // Will populate color menu dynamically when shown
-    [colorMenu setDelegate:(id<NSMenuDelegate>)self];
-    
-    // 3. Open Controls...
-    NSMenuItem *controlsItem = [[[NSMenuItem alloc] initWithTitle:@"Open Controls..." 
-                                                         action:@selector(openControls:) 
-                                                  keyEquivalent:@""] autorelease];
-    [controlsItem setTarget:self];
-    [menu addItem:controlsItem];
-    
-    // Add separator
+    [menu addItemWithTitle:@"Open Controls..." action:@selector(openControls:) keyEquivalent:@""].target = self;
     [menu addItem:[NSMenuItem separatorItem]];
-    
-    // 4. Help (Keyboard Shortcuts)
-    NSMenuItem *helpItem = [[[NSMenuItem alloc] initWithTitle:@"Keyboard Shortcuts..." 
-                                                        action:@selector(showKeyboardShortcuts:) 
-                                                 keyEquivalent:@""] autorelease];
-    [helpItem setTarget:self];
-    [menu addItem:helpItem];
-    
-    // Add separator
+    [menu addItemWithTitle:@"Keyboard Shortcuts..." action:@selector(showKeyboardShortcuts:) keyEquivalent:@""].target = self;
     [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"].target = NSApp;
     
-    // 5. Quit
-    NSMenuItem *quitItem = [[[NSMenuItem alloc] initWithTitle:@"Quit" 
-                                                    action:@selector(terminate:) 
-                                             keyEquivalent:@"q"] autorelease];
-    [quitItem setTarget:NSApp];
-    [menu addItem:quitItem];
-    
-    // Set the menu
     [statusItem setMenu:menu];
 }
 
-// Open Controls window
+#pragma mark - Menu Actions
+
 - (void)openControls:(id)sender {
     if (self.controlPanel) {
         [NSApp activateIgnoringOtherApps:YES];
@@ -513,332 +310,172 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     }
 }
 
-// Show Keyboard Shortcuts dialog
 - (void)showKeyboardShortcuts:(id)sender {
-    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
-    [alert setMessageText:@"Keyboard Shortcuts"];
-    
-    // Try to read shortcuts from the text file in the app bundle
     NSString *shortcutsPath = [[NSBundle mainBundle] pathForResource:@"KeyboardShortcuts" ofType:@"txt"];
-    NSString *shortcuts = nil;
+    NSString *shortcuts = shortcutsPath ? [NSString stringWithContentsOfFile:shortcutsPath encoding:NSUTF8StringEncoding error:nil] : nil;
     
-    if (shortcutsPath) {
-        NSError *error = nil;
-        shortcuts = [NSString stringWithContentsOfFile:shortcutsPath 
-                                              encoding:NSUTF8StringEncoding 
-                                                 error:&error];
-        if (error) {
-            NSLog(@"Error reading keyboard shortcuts file: %@", error);
-            shortcuts = nil;
-        }
-    }
-    
-    // Fallback to default text if file couldn't be read
     if (!shortcuts) {
         shortcuts = @"Drawing & Navigation:\n"
                    @"• Shift + Drag: Draw straight lines\n"
                    @"• F14 (hold): Temporarily use pen as normal mouse\n"
-                   @"• Click on stroke: Select and drag to move\n"
-                   @"\n"
+                   @"• Click on stroke: Select and drag to move\n\n"
                    @"Editing:\n"
                    @"• ⌘Z: Undo last stroke\n"
                    @"• ⌘Z (hold): Clear all drawing\n"
-                   @"• ⇧⌘Z: Redo\n"
-                   @"\n"
+                   @"• ⇧⌘Z: Redo\n\n"
                    @"Colors:\n"
-                   @"• ⌘D: Toggle to next color\n"
-                   @"\n"
+                   @"• ⌘D: Toggle to next color\n\n"
                    @"Text:\n"
                    @"• ⌥⇧⌘T: Enter text input mode\n"
-                   @"• Alt+Enter: Create new text area below (in text mode)\n"
-                   @"\n"
+                   @"• Alt+Enter: Create new text area below (in text mode)\n\n"
                    @"Note: Most shortcuts work from the Wacom tablet buttons.";
-        NSLog(@"Using fallback keyboard shortcuts text");
     }
     
+    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+    [alert setMessageText:@"Keyboard Shortcuts"];
     [alert setInformativeText:shortcuts];
     [alert addButtonWithTitle:@"OK"];
     [alert setAlertStyle:NSInformationalAlertStyle];
-    
     [alert runModal];
 }
 
-// Clear Drawing action
 - (void)clearDrawing:(id)sender {
-    if (self.drawView) {
-        [self.drawView clear];
-    }
+    [self.drawView clear];
 }
 
-// For storing menu references
 NSMenu *colorMenu = nil;
 
-// Menu delegate method to update color menu
 - (void)menuNeedsUpdate:(NSMenu *)menu {
-    // Check if this is our color submenu
-    if (colorMenu == menu) {
-        // Clear existing items
-        [menu removeAllItems];
+    if (colorMenu != menu) return;
+    
+    [menu removeAllItems];
+    
+    NSInteger currentIndex = [self.drawView currentColorIndex];
+    NSArray *presetColors = [self.drawView presetColors];
+    
+    for (NSInteger i = 0; i < [presetColors count]; i++) {
+        NSColor *color = [presetColors objectAtIndex:i];
+        NSMenuItem *item = [[[NSMenuItem alloc] initWithTitle:@"" action:@selector(changeToColor:) keyEquivalent:@""] autorelease];
+        [item setTag:i];
+        [item setTarget:self];
         
-        // Get the current color index and preset colors
-        NSInteger currentIndex = [self.drawView currentColorIndex];
-        NSArray *presetColors = [self.drawView presetColors];
+        NSImage *swatchImage = [[[NSImage alloc] initWithSize:NSMakeSize(16, 16)] autorelease];
+        [swatchImage lockFocus];
+        [color set];
+        NSRectFill(NSMakeRect(0, 0, 16, 16));
+        [[NSColor blackColor] set];
+        NSFrameRect(NSMakeRect(0, 0, 16, 16));
+        [swatchImage unlockFocus];
         
-        // Add menu items for all colors
-        for (NSInteger i = 0; i < [presetColors count]; i++) {
-            NSColor *color = [presetColors objectAtIndex:i];
-            
-            // Create menu item with no title, just showing the color swatch
-            NSMenuItem *item = [[[NSMenuItem alloc] initWithTitle:@"" 
-                                                          action:@selector(changeToColor:) 
-                                                   keyEquivalent:@""] autorelease];
-            [item setTag:i]; // Store color index in tag
-            [item setTarget:self];
-            
-            // Create color swatch
-            NSImage *swatchImage = [[[NSImage alloc] initWithSize:NSMakeSize(16, 16)] autorelease];
-            [swatchImage lockFocus];
-            [color set];
-            NSRectFill(NSMakeRect(0, 0, 16, 16));
-            [[NSColor blackColor] set];
-            NSFrameRect(NSMakeRect(0, 0, 16, 16));
-            [swatchImage unlockFocus];
-            
-            [item setImage:swatchImage];
-            
-            // Add a check mark to the current color
-            if (i == currentIndex) {
-                [item setState:NSOnState];
-            }
-            
-            [menu addItem:item];
-        }
+        [item setImage:swatchImage];
+        if (i == currentIndex) [item setState:NSOnState];
+        [menu addItem:item];
     }
 }
 
-// Change to selected color
 - (void)changeToColor:(id)sender {
     NSInteger colorIndex = [sender tag];
+    if (colorIndex == [self.drawView currentColorIndex]) return;
     
-    // Only change if it's a different color than the current one
-    if (colorIndex != [self.drawView currentColorIndex]) {
-        // Set the current color index
-        [self.drawView setCurrentColorIndex:colorIndex];
+    [self.drawView setCurrentColorIndex:colorIndex];
+    NSArray *presetColors = [self.drawView presetColors];
+    if (colorIndex < [presetColors count]) {
+        NSColor *newColor = [presetColors objectAtIndex:colorIndex];
         
-        // Update the stroke color
-        NSArray *presetColors = [self.drawView presetColors];
-        if (colorIndex < [presetColors count]) {
-            NSColor *newColor = [presetColors objectAtIndex:colorIndex];
-            
-            // Instead of using setStrokeColor accessor, we'll modify the property directly
-            // and post the notification ourselves to ensure it's triggered
-            DrawView *dv = self.drawView;
-            if ([dv strokeColor] != newColor) {
-                [[dv strokeColor] release];
-                [dv setValue:[newColor retain] forKey:@"strokeColor"];
-                
-                // Post a color change notification for the cursor
-                NSDictionary *userInfo = [NSDictionary dictionaryWithObject:newColor forKey:@"color"];
-                [[NSNotificationCenter defaultCenter] postNotificationName:@"DrawViewColorChanged"
-                                                                  object:dv
-                                                                userInfo:userInfo];
-                
-                NSLog(@"AppDelegate: Posted color change notification for menu bar color change with color: %@", newColor);
-            }
-            
-            // Update color well in control panel if it's open
-            if (self.controlPanel) {
-                NSColorWell *colorWell = [self.controlPanel valueForKey:@"colorWell"];
-                if (colorWell) {
-                    [colorWell setColor:newColor];
-                }
-            }
+        [[self.drawView strokeColor] release];
+        [self.drawView setValue:[newColor retain] forKey:@"strokeColor"];
+        
+        NSDictionary *userInfo = [NSDictionary dictionaryWithObject:newColor forKey:@"color"];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"DrawViewColorChanged" object:self.drawView userInfo:userInfo];
+        
+        if (self.controlPanel) {
+            NSColorWell *colorWell = [self.controlPanel valueForKey:@"colorWell"];
+            if (colorWell) [colorWell setColor:newColor];
         }
     }
 }
 
-// This method is called after the undo key has been held down for a moment
-- (void)undoKeyHoldTimerFired:(NSTimer *)timer {
-    NSLog(@"EVENT TAP: Undo key hold timer fired - clearing drawing");
-    
-    // Only clear if the undo key is still down
-    if (self.isUndoKeyDown) {
-        if ([self.drawView respondsToSelector:@selector(clear)]) {
-            [self.drawView clear];
-        }
-    }
-}
+#pragma mark - Application Lifecycle
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
-    // Initialize key state trackers
     self.isUndoKeyDown = NO;
     self.isNormalModeKeyDown = NO;
     self.lastUndoKeyTime = nil;
     
-    // Check for accessibility permissions first
     NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @NO};
-    BOOL accessibilityEnabled = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
-    
-    if (!accessibilityEnabled) {
-        NSLog(@"Accessibility permissions not granted - showing alert");
-        
-        // Get app name from Info.plist
-        NSString *appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
-        if (!appName) {
-            appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"];
-        }
-        if (!appName) {
-            appName = [[NSProcessInfo processInfo] processName];
-        }
-        
-        // Create an alert dialog to inform the user
+    if (!AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options)) {
         NSAlert *alert = [[[NSAlert alloc] init] autorelease];
         [alert setMessageText:@"Accessibility Permission Required"];
-        [alert setInformativeText:[NSString stringWithFormat:@"%@ needs accessibility permissions to fully capture tablet input.\n\nTo grant permission:\n1. Click 'Open System Preferences' below\n2. Click the lock to make changes\n3. Check the box next to %@\n4. Restart %@", appName, appName, appName]];
+        [alert setInformativeText:@"Wacom Overlay needs accessibility permissions to capture tablet input.\n\nGrant permission in System Preferences > Security & Privacy > Privacy > Accessibility"];
         [alert addButtonWithTitle:@"Open System Preferences"];
         [alert addButtonWithTitle:@"Quit"];
         [alert setAlertStyle:NSWarningAlertStyle];
         
-        NSModalResponse response = [alert runModal];
-        
-        if (response == NSAlertFirstButtonReturn) {
-            // Open System Preferences to the Security & Privacy pane
+        if ([alert runModal] == NSAlertFirstButtonReturn) {
             [[NSWorkspace sharedWorkspace] openFile:@"/System/Library/PreferencePanes/Security.prefPane"];
         }
-        
-        // Quit the app since it can't function without permissions
         [NSApp terminate:nil];
         return;
     }
     
-    NSLog(@"Accessibility permissions granted - continuing with initialization");
-    
-    // Find the Wacom driver PID
     wacomDriverPID = [self findWacomDriverPID];
-    if (wacomDriverPID == 0) {
-        NSLog(@"Warning: Wacom Tablet Driver not found. Keyboard shortcuts will pass through.");
-    } else {
-        NSLog(@"Wacom Tablet Driver found with PID: %d", (int)wacomDriverPID);
-    }
     
-    // Create the overlay window that will cover all screens
     NSRect totalScreensRect = [self totalScreensRect];
-    self.overlayWindow = [[OverlayWindow alloc] initWithContentRect:totalScreensRect
-                                                          styleMask:0 // NSBorderlessWindowMask
-                                                            backing:NSBackingStoreBuffered
-                                                              defer:NO];
-    
-    // Set window to be transparent
+    self.overlayWindow = [[OverlayWindow alloc] initWithContentRect:totalScreensRect styleMask:0 backing:NSBackingStoreBuffered defer:NO];
     [self.overlayWindow setOpaque:NO];
     [self.overlayWindow setAlphaValue:1.0];
     [self.overlayWindow setBackgroundColor:[NSColor clearColor]];
-    
-    // CRITICAL: This makes mouse events pass through to applications below
     [self.overlayWindow setIgnoresMouseEvents:YES];
     
-    // Get the draw view from the overlay window
     self.drawView = (DrawView *)[self.overlayWindow contentView];
-    
-    // Create the control panel but don't show it by default
     self.controlPanel = [[ControlPanel alloc] initWithDrawView:self.drawView];
     
-    // Show the overlay window
     [self.overlayWindow makeKeyAndOrderFront:nil];
     
-    // Connect overlay window with TabletApplication
     TabletApplication *app = (TabletApplication *)NSApp;
     [app setOverlayWindow:self.overlayWindow];
     
-    // Setup status bar menu
     [self setupStatusBarMenu];
     
-    // Register for screen configuration change notifications
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(screenParametersDidChange:)
-                                                 name:NSApplicationDidChangeScreenParametersNotification
-                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(screenParametersDidChange:) 
+                                                 name:NSApplicationDidChangeScreenParametersNotification object:nil];
     
-    NSLog(@"Connected overlay window to TabletApplication for event interception");
+    CGEventMask eventMask = CGEventMaskBit(kCGEventLeftMouseDown) | CGEventMaskBit(kCGEventLeftMouseUp) | 
+                           CGEventMaskBit(kCGEventLeftMouseDragged) | CGEventMaskBit(kCGEventRightMouseDown) |
+                           CGEventMaskBit(kCGEventRightMouseUp) | CGEventMaskBit(kCGEventRightMouseDragged) |
+                           CGEventMaskBit(kCGEventOtherMouseDown) | CGEventMaskBit(kCGEventOtherMouseUp) |
+                           CGEventMaskBit(kCGEventOtherMouseDragged) | CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp);
     
-    // Set up event tap to capture ALL tablet events and keyboard events system-wide
-    // We need to tap into events at the lowest level to truly intercept them
-    CGEventMask eventMask = CGEventMaskBit(kCGEventLeftMouseDown) | 
-                            CGEventMaskBit(kCGEventLeftMouseUp) | 
-                            CGEventMaskBit(kCGEventLeftMouseDragged) |
-                            CGEventMaskBit(kCGEventRightMouseDown) |  // Add right mouse for completeness
-                            CGEventMaskBit(kCGEventRightMouseUp) |
-                            CGEventMaskBit(kCGEventRightMouseDragged) |
-                            CGEventMaskBit(kCGEventOtherMouseDown) |  // Add other mouse buttons
-                            CGEventMaskBit(kCGEventOtherMouseUp) |
-                            CGEventMaskBit(kCGEventOtherMouseDragged) |
-                            CGEventMaskBit(kCGEventKeyDown) |
-                            CGEventMaskBit(kCGEventKeyUp);   // Make sure we capture key up events too
-    
-    // Create the event tap at the session level
-    // Previously: kCGHIDEventTap, but this might not block events properly
-    // Switch to kCGSessionEventTap to ensure events are fully intercepted 
-    eventTap = CGEventTapCreate(kCGSessionEventTap,   // Session level tap to intercept before dispatch to apps
-                                kCGHeadInsertEventTap, // Insert at beginning of list
-                                0,                     // Default options, NOT kCGEventTapOptionDefault
-                                eventMask,             // Events to capture
-                                eventTapCallback,      // Callback function
-                                self);                 // User data passed to callback
+    eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, 0, eventMask, eventTapCallback, self);
     
     if (!eventTap) {
-        NSLog(@"ERROR: Failed to create event tap! This shouldn't happen since we already checked accessibility permissions.");
-        
-        // Get app name from Info.plist
-        NSString *appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
-        if (!appName) {
-            appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"];
-        }
-        if (!appName) {
-            appName = [[NSProcessInfo processInfo] processName];
-        }
-        
-        // Show an error dialog
         NSAlert *alert = [[[NSAlert alloc] init] autorelease];
         [alert setMessageText:@"Failed to Initialize"];
-        [alert setInformativeText:[NSString stringWithFormat:@"%@ could not create the event tap needed to capture tablet input. This is an unexpected error.\n\nPlease try restarting the application.", appName]];
+        [alert setInformativeText:@"Could not create event tap. Please restart the application."];
         [alert addButtonWithTitle:@"Quit"];
         [alert setAlertStyle:NSCriticalAlertStyle];
         [alert runModal];
-        
         [NSApp terminate:nil];
         return;
     }
     
-    // Create a run loop source for the event tap
     runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
-    
-    // Add the run loop source to the current run loop
     CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, kCFRunLoopCommonModes);
-    
-    // Enable the event tap
     CGEventTapEnable(eventTap, true);
     
-    NSLog(@"Event tap installed successfully");
-    
-    // Show the overlay window above all other windows
     [self.overlayWindow orderFront:nil];
     
-    // Register for notifications
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(applicationWillTerminate:)
-                                                 name:NSApplicationWillTerminateNotification
-                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationWillTerminate:) 
+                                                 name:NSApplicationWillTerminateNotification object:nil];
 }
 
 - (void)screenParametersDidChange:(NSNotification *)notification {
-    NSLog(@"Screen parameters changed - updating overlay window frame");
     [self updateOverlayWindowFrame];
 }
 
 - (void)applicationWillTerminate:(NSNotification *)aNotification {
-    // Clean up by removing notification observers
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     
-    // Cleanup event tap
     if (eventTap) {
         CGEventTapEnable(eventTap, false);
         CFMachPortInvalidate(eventTap);
@@ -852,27 +489,14 @@ NSMenu *colorMenu = nil;
         runLoopSource = NULL;
     }
     
-    // Remove event monitor if it exists
-    if (eventMonitor) {
-        [NSEvent removeMonitor:eventMonitor];
-    }
+    if (eventMonitor) [NSEvent removeMonitor:eventMonitor];
+    if (self.undoHoldTimer) [self.undoHoldTimer invalidate];
     
-    // Clean up timers
-    if (self.undoHoldTimer) {
-        [self.undoHoldTimer invalidate];
-        self.undoHoldTimer = nil;
-    }
-    
-    // Release the stored time
     [self.lastUndoKeyTime release];
     self.lastUndoKeyTime = nil;
-    
-    // No need to clean up key tracking dictionary as we're not using it anymore
 }
 
-// Clean up memory
 - (void)dealloc {
-    // Additional cleanup
     if (eventTap) {
         CGEventTapEnable(eventTap, false);
         CFMachPortInvalidate(eventTap);
@@ -884,13 +508,8 @@ NSMenu *colorMenu = nil;
         CFRelease(runLoopSource);
     }
     
-    if (eventMonitor) {
-        [NSEvent removeMonitor:eventMonitor];
-    }
-    
-    if (undoHoldTimer) {
-        [undoHoldTimer invalidate];
-    }
+    if (eventMonitor) [NSEvent removeMonitor:eventMonitor];
+    if (undoHoldTimer) [undoHoldTimer invalidate];
     
     [undoHoldTimer release];
     [lastUndoKeyTime release];
