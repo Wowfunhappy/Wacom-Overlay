@@ -96,6 +96,7 @@
     NSMutableArray *savedMarkers;
     NSMutableArray *savedTextFields;
     NSMutableArray *savedTextColors;
+    NSMutableArray *savedRedoStack;
 }
 - (id)initWithDrawView:(DrawView *)view;
 @end

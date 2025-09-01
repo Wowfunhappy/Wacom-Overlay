@@ -583,12 +583,14 @@
         NSMutableArray *strokeMarkers = [view valueForKey:@"strokeMarkers"];
         NSMutableArray *textFields = [view valueForKey:@"textFields"];
         NSMutableArray *textFieldColors = [view valueForKey:@"textFieldColors"];
+        NSMutableArray *redoStack = [view valueForKey:@"redoStack"];
         
         savedPaths = [[NSMutableArray alloc] init];
         savedColors = [[NSMutableArray alloc] init];
         savedMarkers = [[NSMutableArray alloc] initWithArray:strokeMarkers];
         savedTextFields = [[NSMutableArray alloc] initWithArray:textFields];
         savedTextColors = [[NSMutableArray alloc] initWithArray:textFieldColors];
+        savedRedoStack = [[NSMutableArray alloc] initWithArray:redoStack];
         
         // Deep copy paths and colors
         for (NSInteger i = 0; i < [paths count]; i++) {
@@ -605,6 +607,7 @@
     NSMutableArray *strokeMarkers = [drawView valueForKey:@"strokeMarkers"];
     NSMutableArray *textFields = [drawView valueForKey:@"textFields"];
     NSMutableArray *textFieldColors = [drawView valueForKey:@"textFieldColors"];
+    NSMutableArray *redoStack = [drawView valueForKey:@"redoStack"];
     
     // Remove all text fields from view
     for (NSTextField *field in textFields) {
@@ -617,6 +620,9 @@
     [strokeMarkers removeAllObjects];
     [textFields removeAllObjects];
     [textFieldColors removeAllObjects];
+    
+    // Clear the redo stack when clearing all
+    [redoStack removeAllObjects];
     
     [drawView invalidateStrokeCache];
     [drawView setNeedsDisplay:YES];
@@ -648,8 +654,23 @@
         [textFieldColors addObject:[savedTextColors objectAtIndex:i]];
     }
     
+    // We'll be added to redo stack by DrawView's undo method,
+    // but we need to restore the saved redo stack after that happens
+    [self performSelector:@selector(restoreRedoStackAfterUndo) withObject:nil afterDelay:0.0];
+    
     [drawView invalidateStrokeCache];
     [drawView setNeedsDisplay:YES];
+}
+
+- (void)restoreRedoStackAfterUndo {
+    NSMutableArray *redoStack = [drawView valueForKey:@"redoStack"];
+    
+    // Replace the entire redo stack with our saved one
+    // This removes ourselves and restores the previous redo history
+    [redoStack removeAllObjects];
+    for (id command in savedRedoStack) {
+        [redoStack addObject:command];
+    }
 }
 
 - (NSString *)description {
@@ -662,6 +683,7 @@
     [savedMarkers release];
     [savedTextFields release];
     [savedTextColors release];
+    [savedRedoStack release];
     [super dealloc];
 }
 @end
