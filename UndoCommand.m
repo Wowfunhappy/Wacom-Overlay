@@ -312,6 +312,11 @@
 }
 
 - (void)execute {
+    // Only execute if we have a valid text field
+    if (!textField) {
+        return;
+    }
+    
     NSMutableArray *textFields = [drawView valueForKey:@"textFields"];
     NSMutableArray *textFieldColors = [drawView valueForKey:@"textFieldColors"];
     
@@ -321,20 +326,17 @@
         [textField removeFromSuperview];
         [textFields removeObjectAtIndex:index];
         [textFieldColors removeObjectAtIndex:index];
-        
-        // Update selected text field index
-        NSInteger *selectedTextFieldIndex = (NSInteger *)[drawView valueForKey:@"selectedTextFieldIndex"];
-        if (*selectedTextFieldIndex == index) {
-            *selectedTextFieldIndex = -1;
-        } else if (*selectedTextFieldIndex > index) {
-            (*selectedTextFieldIndex)--;
-        }
     }
     
     [drawView setNeedsDisplay:YES];
 }
 
 - (void)undo {
+    // Only undo if we have a valid text field
+    if (!textField || !textColor) {
+        return;
+    }
+    
     NSMutableArray *textFields = [drawView valueForKey:@"textFields"];
     NSMutableArray *textFieldColors = [drawView valueForKey:@"textFieldColors"];
     
