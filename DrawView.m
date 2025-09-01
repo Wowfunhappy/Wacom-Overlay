@@ -216,8 +216,8 @@
         [currentPath stroke];
     }
     
-    // Draw straight line preview if shift is down
-    if (straightLinePath && isShiftKeyDown) {
+    // Draw straight line preview if it exists
+    if (straightLinePath) {
         [strokeColor set];
         [straightLinePath stroke];
     }
@@ -342,7 +342,7 @@
         NSLog(@"DrawView: Shift key state at mouseDown: %@", isShiftKeyDown ? @"DOWN" : @"UP");
         
         // Check if shift key is already down when starting a new stroke
-        if (isShiftKeyDown) {
+        if (shiftIsDown) {
             NSLog(@"DrawView: Starting in straight line mode (shift already down)");
             
             // Set the initial straight line width based on current pressure
@@ -539,7 +539,7 @@
     }
     
     // Check if shift key is down for straight line drawing
-    if (isShiftKeyDown) {
+    if (shiftIsDown) {
             NSLog(@"DrawView: Shift key is down during drag, drawing straight line preview");
             
             // Release any existing straight line path and create a new one
@@ -667,8 +667,8 @@
             NSLog(@"DrawView: Shift key detected as %@ during mouseUp", isShiftKeyDown ? @"DOWN" : @"UP");
         }
         
-        // Check if we are in straight line mode (shift key held)
-        if (isShiftKeyDown && straightLinePath) {
+        // Check if we have a straight line to commit (regardless of current shift state)
+        if (straightLinePath) {
             NSLog(@"DrawView: Completing straight line drawing");
             
             // Get the current point
@@ -748,11 +748,7 @@
             NSLog(@"DrawView: Finished dragging");
         }
         
-        // Clean up straight line path if it exists
-        if (straightLinePath) {
-            [straightLinePath release];
-            straightLinePath = nil;
-        }
+        // Straight line path cleanup is now handled above
     }
     
     [self setNeedsDisplay:YES];
@@ -947,7 +943,7 @@
             [self setNeedsDisplay:YES];
         }
         
-        isShiftKeyDown = NO;
+        // Don't set isShiftKeyDown = NO here - let mouse events handle it
     }
     
     [super keyUp:event];
@@ -970,20 +966,8 @@
     AppDelegate *appDelegate = (AppDelegate *)[[NSApplication sharedApplication] delegate];
     pid_t wacomDriverPID = [[appDelegate valueForKey:@"wacomDriverPID"] intValue];
     
-    // Check for shift key for straight line drawing
-    BOOL isShiftDown = (flags & (1 << 17)) != 0;     // NSShiftKeyMask in 10.9
-    
-    // Check if shift key state has changed
-    if (isShiftDown != isShiftKeyDown) {
-        isShiftKeyDown = isShiftDown;
-        NSLog(@"DrawView: Shift key %@", isShiftKeyDown ? @"pressed" : @"released");
-        
-        // If shift was just released and we have an active straight line preview,
-        // we need to commit it or cancel it
-        if (!isShiftKeyDown && straightLinePath) {
-            [self setNeedsDisplay:YES];
-        }
-    }
+    // Don't update isShiftKeyDown here - let mouse events handle it
+    // This prevents keyboard events from interfering with shift state during drawing
     
     // Only process keyboard events from the Wacom driver
     if (wacomDriverPID != 0 && eventSourcePID == wacomDriverPID) {
