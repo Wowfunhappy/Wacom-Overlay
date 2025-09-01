@@ -33,14 +33,14 @@
     CGFloat straightLineWidth; // To store the width at the time shift was pressed
     
     // Text annotation variables
-    NSMutableArray *textAnnotations; // Array of dictionaries with text, position, attributes
-    NSMutableArray *textColors; // Colors for each text annotation
-    NSMutableArray *undoTextAnnotations;
-    NSMutableArray *undoTextColors;
+    NSMutableArray *textFields; // Array of NSTextField subviews
+    NSMutableArray *textFieldColors; // Colors for each text field
+    NSMutableArray *undoTextFields;
+    NSMutableArray *undoTextFieldColors;
     BOOL isTextInputMode;
     BOOL isEditingText;
     NSTextField *activeTextField;
-    NSInteger selectedTextIndex;
+    NSInteger selectedTextFieldIndex;
     NSPoint textInputPosition;
     NSInteger originalWindowLevel;
     CGFloat textSize;

@@ -96,15 +96,15 @@
         dragStartPoint = NSZeroPoint;
         relatedStrokeIndices = [[NSMutableArray alloc] init];
         
-        // Initialize text annotation variables
-        textAnnotations = [[NSMutableArray alloc] init];
-        textColors = [[NSMutableArray alloc] init];
-        undoTextAnnotations = [[NSMutableArray alloc] init];
-        undoTextColors = [[NSMutableArray alloc] init];
+        // Initialize text field variables
+        textFields = [[NSMutableArray alloc] init];
+        textFieldColors = [[NSMutableArray alloc] init];
+        undoTextFields = [[NSMutableArray alloc] init];
+        undoTextFieldColors = [[NSMutableArray alloc] init];
         isTextInputMode = NO;
         isEditingText = NO;
         activeTextField = nil;
-        selectedTextIndex = -1;
+        selectedTextFieldIndex = -1;
         originalWindowLevel = NSScreenSaverWindowLevel;  // Initialize to default overlay window level
         
         // Make the view transparent to allow click-through
@@ -222,8 +222,7 @@
         [straightLinePath stroke];
     }
     
-    // Draw text annotations
-    [self drawTextAnnotations];
+    // Text fields are now persistent NSTextField subviews, no need to draw them
     
     // Removed debug visualization code
 }
@@ -383,14 +382,14 @@
     } else {
         // For regular mouse events, use the event's locationInWindow coordinates
         viewPoint = [self convertPoint:[event locationInWindow] fromView:nil];
-        NSLog(@"DrawView: mouseDown detected regular mouse event at point: %@, isDraggingStroke=%d, selectedTextIndex=%ld", NSStringFromPoint(viewPoint), isDraggingStroke, (long)selectedTextIndex);
+        NSLog(@"DrawView: mouseDown detected regular mouse event at point: %@, isDraggingStroke=%d, selectedTextFieldIndex=%ld", NSStringFromPoint(viewPoint), isDraggingStroke, (long)selectedTextFieldIndex);
         
         // No longer handle text input mode via mouse clicks - only via keyboard shortcut
         
         // Check for text annotations first
         NSInteger textIndex = [self findTextAnnotationAtPoint:viewPoint];
         if (textIndex >= 0) {
-            selectedTextIndex = textIndex;
+            selectedTextFieldIndex = textIndex;
             selectedStrokeIndex = -1;
             isStrokeSelected = NO;
             isDraggingStroke = YES;
@@ -645,10 +644,10 @@
             CGFloat dy = viewPoint.y - dragStartPoint.y;
             
             // Check if we're dragging text or stroke
-            if (selectedTextIndex >= 0) {
-                // Dragging text
+            if (selectedTextFieldIndex >= 0) {
+                // Dragging text field
                 [self moveSelectedText:NSMakePoint(dx, dy)];
-                NSLog(@"DrawView: Dragged text by offset (%f, %f)", dx, dy);
+                NSLog(@"DrawView: Dragged text field by offset (%f, %f)", dx, dy);
             } else if (isStrokeSelected && selectedStrokeIndex >= 0) {
                 // Dragging stroke
                 [self moveSelectedStroke:NSMakePoint(dx, dy)];
@@ -754,7 +753,7 @@
         // End any stroke dragging
         if (isDraggingStroke) {
             isDraggingStroke = NO;
-            selectedTextIndex = -1;  // Clear text selection
+            selectedTextFieldIndex = -1;  // Clear text field selection
             
             // Invalidate cache since strokes may have been moved
             [self invalidateStrokeCache];
@@ -828,10 +827,10 @@
 - (void)clear {
     // Save count for redo information
     NSInteger pathCount = [paths count];
-    NSInteger textCount = [textAnnotations count];
+    NSInteger textFieldCount = [textFields count];
     
-    // Only save to undo stack if there are paths or text to save
-    if (pathCount > 0 || textCount > 0) {
+    // Only save to undo stack if there are paths or text fields to save
+    if (pathCount > 0 || textFieldCount > 0) {
         // Make a deep copy of the current drawing state for undo/redo
         NSMutableArray *savedPaths = [[NSMutableArray alloc] initWithCapacity:pathCount];
         NSMutableArray *savedColors = [[NSMutableArray alloc] initWithCapacity:pathCount];
@@ -849,17 +848,17 @@
             [colorCopy release];
         }
         
-        // Save text annotations too
-        NSMutableArray *savedTextAnnotations = [textAnnotations mutableCopy];
-        NSMutableArray *savedTextColors = [textColors mutableCopy];
+        // Save text fields too
+        NSMutableArray *savedTextFields = [textFields mutableCopy];
+        NSMutableArray *savedTextFieldColors = [textFieldColors mutableCopy];
         
         // Create a special clear operation container that holds the entire drawing state
         NSMutableDictionary *clearState = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                         savedPaths, @"paths",
                                         savedColors, @"colors",
                                         savedMarkers, @"markers",
-                                        savedTextAnnotations, @"textAnnotations",
-                                        savedTextColors, @"textColors",
+                                        savedTextFields, @"textFields",
+                                        savedTextFieldColors, @"textFieldColors",
                                         nil];
         
         // Store a single clear operation record in the undo stack
@@ -870,15 +869,20 @@
         [savedPaths release];
         [savedColors release];
         [savedMarkers release];
-        [savedTextAnnotations release];
-        [savedTextColors release];
+        [savedTextFields release];
+        [savedTextFieldColors release];
         
         // Now clear the current state
         [paths removeAllObjects];
         [pathColors removeAllObjects];
         [strokeMarkers removeAllObjects];
-        [textAnnotations removeAllObjects];
-        [textColors removeAllObjects];
+        
+        // Remove all text field subviews
+        for (NSTextField *textField in textFields) {
+            [textField removeFromSuperview];
+        }
+        [textFields removeAllObjects];
+        [textFieldColors removeAllObjects];
         
         NSLog(@"DrawView: Cleared drawing state - saved %ld paths for redo", (long)pathCount);
     }
@@ -1017,12 +1021,12 @@
 
 // Check if there's something to undo
 - (BOOL)canUndo {
-    return ([paths count] > 0 && [strokeMarkers count] > 0) || [textAnnotations count] > 0;
+    return ([paths count] > 0 && [strokeMarkers count] > 0) || [textFields count] > 0;
 }
 
 // Check if there's something to redo
 - (BOOL)canRedo {
-    if ([undoTextAnnotations count] > 0) {
+    if ([undoTextFields count] > 0) {
         return YES;
     }
     
@@ -1253,30 +1257,33 @@
     }
 }
 
-// Erase text annotation at the given point
+// Erase text field at the given point
 - (void)eraseTextAtPoint:(NSPoint)point {
-    NSInteger textIndex = [self findTextAnnotationAtPoint:point];
+    NSInteger textIndex = [self findTextFieldAtPoint:point];
     
-    if (textIndex >= 0 && textIndex < [textAnnotations count]) {
+    if (textIndex >= 0 && textIndex < [textFields count]) {
         // Save to undo stack
-        NSMutableDictionary *textToUndo = [[textAnnotations objectAtIndex:textIndex] retain];
-        NSColor *colorToUndo = [[textColors objectAtIndex:textIndex] retain];
+        NSTextField *textFieldToUndo = [[textFields objectAtIndex:textIndex] retain];
+        NSColor *colorToUndo = [[textFieldColors objectAtIndex:textIndex] retain];
         
-        [undoTextAnnotations addObject:textToUndo];
-        [undoTextColors addObject:colorToUndo];
+        [undoTextFields addObject:textFieldToUndo];
+        [undoTextFieldColors addObject:colorToUndo];
         
-        [textToUndo release];
+        // Remove the text field from view
+        [textFieldToUndo removeFromSuperview];
+        
+        [textFieldToUndo release];
         [colorToUndo release];
         
-        // Remove the text annotation
-        [textAnnotations removeObjectAtIndex:textIndex];
-        [textColors removeObjectAtIndex:textIndex];
+        // Remove from arrays
+        [textFields removeObjectAtIndex:textIndex];
+        [textFieldColors removeObjectAtIndex:textIndex];
         
         // Clear selected text if it was erased
-        if (selectedTextIndex == textIndex) {
-            selectedTextIndex = -1;
-        } else if (selectedTextIndex > textIndex) {
-            selectedTextIndex--;
+        if (selectedTextFieldIndex == textIndex) {
+            selectedTextFieldIndex = -1;
+        } else if (selectedTextFieldIndex > textIndex) {
+            selectedTextFieldIndex--;
         }
         
         // Redraw
@@ -1401,29 +1408,32 @@
         // Determine what to undo - prioritize text if it was added most recently
         BOOL undoText = NO;
         
-        // Simple heuristic: if there's text and no strokes, undo text
-        // Or if there are both, undo text (since we don't track chronological order yet)
-        if ([textAnnotations count] > 0) {
+        // Simple heuristic: if there's text fields and no strokes, undo text field
+        // Or if there are both, undo text field (since we don't track chronological order yet)
+        if ([textFields count] > 0) {
             undoText = YES;
         }
         
-        if (undoText && [textAnnotations count] > 0) {
-            // Undo the last text annotation
-            NSMutableDictionary *textToUndo = [[textAnnotations lastObject] retain];
-            NSColor *colorToUndo = [[textColors lastObject] retain];
+        if (undoText && [textFields count] > 0) {
+            // Undo the last text field
+            NSTextField *textFieldToUndo = [[textFields lastObject] retain];
+            NSColor *colorToUndo = [[textFieldColors lastObject] retain];
+            
+            // Remove from view
+            [textFieldToUndo removeFromSuperview];
             
             // Add to undo stacks
-            [undoTextAnnotations addObject:textToUndo];
-            [undoTextColors addObject:colorToUndo];
+            [undoTextFields addObject:textFieldToUndo];
+            [undoTextFieldColors addObject:colorToUndo];
             
             // Remove from current
-            [textAnnotations removeLastObject];
-            [textColors removeLastObject];
+            [textFields removeLastObject];
+            [textFieldColors removeLastObject];
             
-            [textToUndo release];
+            [textFieldToUndo release];
             [colorToUndo release];
             
-            NSLog(@"DrawView: Undo performed, removed text annotation");
+            NSLog(@"DrawView: Undo performed, removed text field");
         }
         else if ([paths count] > 0 && [strokeMarkers count] > 0) {
             // Get the marker for the last stroke
@@ -1478,24 +1488,27 @@
     
     // Check if there are any paths to redo
     if ([self canRedo]) {
-        // Check if we have text to redo first
-        if ([undoTextAnnotations count] > 0) {
-            // Redo the last text annotation
-            NSMutableDictionary *textToRedo = [[undoTextAnnotations lastObject] retain];
-            NSColor *colorToRedo = [[undoTextColors lastObject] retain];
+        // Check if we have text fields to redo first
+        if ([undoTextFields count] > 0) {
+            // Redo the last text field
+            NSTextField *textFieldToRedo = [[undoTextFields lastObject] retain];
+            NSColor *colorToRedo = [[undoTextFieldColors lastObject] retain];
             
-            // Add back to current
-            [textAnnotations addObject:textToRedo];
-            [textColors addObject:colorToRedo];
+            // Add back to view
+            [self addSubview:textFieldToRedo];
+            
+            // Add back to current arrays
+            [textFields addObject:textFieldToRedo];
+            [textFieldColors addObject:colorToRedo];
             
             // Remove from undo stacks
-            [undoTextAnnotations removeLastObject];
-            [undoTextColors removeLastObject];
+            [undoTextFields removeLastObject];
+            [undoTextFieldColors removeLastObject];
             
-            [textToRedo release];
+            [textFieldToRedo release];
             [colorToRedo release];
             
-            NSLog(@"DrawView: Redo performed, restored text annotation");
+            NSLog(@"DrawView: Redo performed, restored text field");
             [self setNeedsDisplay:YES];
             return;
         }
@@ -1514,8 +1527,8 @@
             NSArray *savedPaths = [clearState objectForKey:@"paths"];
             NSArray *savedColors = [clearState objectForKey:@"colors"];
             NSArray *savedMarkers = [clearState objectForKey:@"markers"];
-            NSArray *savedTextAnnotations = [clearState objectForKey:@"textAnnotations"];
-            NSArray *savedTextColors = [clearState objectForKey:@"textColors"];
+            NSArray *savedTextFields = [clearState objectForKey:@"textFields"];
+            NSArray *savedTextFieldColors = [clearState objectForKey:@"textFieldColors"];
             
             NSInteger pathCount = [savedPaths count];
             
@@ -1561,11 +1574,13 @@
                 [strokeMarkers addObject:marker];
             }
             
-            // Restore text annotations if they exist
-            if (savedTextAnnotations && savedTextColors) {
-                for (NSInteger i = 0; i < [savedTextAnnotations count]; i++) {
-                    [textAnnotations addObject:[savedTextAnnotations objectAtIndex:i]];
-                    [textColors addObject:[savedTextColors objectAtIndex:i]];
+            // Restore text fields if they exist
+            if (savedTextFields && savedTextFieldColors) {
+                for (NSInteger i = 0; i < [savedTextFields count]; i++) {
+                    NSTextField *textField = [savedTextFields objectAtIndex:i];
+                    [self addSubview:textField];
+                    [textFields addObject:textField];
+                    [textFieldColors addObject:[savedTextFieldColors objectAtIndex:i]];
                 }
             }
             
@@ -1813,6 +1828,15 @@
     [strokeColor release];
     [presetColors release];
     [relatedStrokeIndices release];
+    
+    // Clean up text fields
+    for (NSTextField *textField in textFields) {
+        [textField removeFromSuperview];
+    }
+    [textFields release];
+    [textFieldColors release];
+    [undoTextFields release];
+    [undoTextFieldColors release];
     
     // Clean up cache
     if (cachedStrokesLayer) {
@@ -2345,25 +2369,28 @@
     NSString *text = [[activeTextField stringValue] copy];
     
     if ([text length] > 0) {
-        // Create text annotation dictionary
-        NSMutableDictionary *annotation = [NSMutableDictionary dictionary];
-        [annotation setObject:text forKey:@"text"];
-        [annotation setObject:[NSValue valueWithPoint:textInputPosition] forKey:@"position"];
-        [annotation setObject:[NSFont systemFontOfSize:self.textSize] forKey:@"font"];
+        // Keep the text field as a subview
+        [activeTextField setEditable:YES];  // Keep it editable
+        [activeTextField setSelectable:YES];
         
-        // Add to arrays
-        [textAnnotations addObject:annotation];
-        [textColors addObject:strokeColor];
+        // Add to arrays for tracking
+        [textFields addObject:activeTextField];
+        [textFieldColors addObject:strokeColor];
+        
+        // Retain the text field since we're keeping it
+        [activeTextField retain];
         
         // Clear redo stacks
-        [undoTextAnnotations removeAllObjects];
-        [undoTextColors removeAllObjects];
+        [undoTextFields removeAllObjects];
+        [undoTextFieldColors removeAllObjects];
         
-        NSLog(@"Added text annotation: %@", text);
+        NSLog(@"Added text field: %@", text);
+    } else {
+        // If empty, remove it
+        [activeTextField removeFromSuperview];
     }
     
-    // Clean up
-    [activeTextField removeFromSuperview];
+    // Clean up active reference
     [activeTextField release];
     activeTextField = nil;
     isEditingText = NO;
@@ -2375,8 +2402,10 @@
     
     NSLog(@"Text input completed, returned to normal mode");
     
-    // Redraw to show the new text
+    // Redraw
     [self setNeedsDisplay:YES];
+    
+    [text release];
 }
 
 - (void)finishTextInputAndCreateNewBelow {
@@ -2386,25 +2415,28 @@
     NSPoint currentPosition = textInputPosition;
     
     if ([text length] > 0) {
-        // Create text annotation dictionary for current text
-        NSMutableDictionary *annotation = [NSMutableDictionary dictionary];
-        [annotation setObject:text forKey:@"text"];
-        [annotation setObject:[NSValue valueWithPoint:currentPosition] forKey:@"position"];
-        [annotation setObject:[NSFont systemFontOfSize:self.textSize] forKey:@"font"];
+        // Keep the text field as a subview
+        [activeTextField setEditable:YES];  // Keep it editable
+        [activeTextField setSelectable:YES];
         
-        // Add to arrays
-        [textAnnotations addObject:annotation];
-        [textColors addObject:strokeColor];
+        // Add to arrays for tracking
+        [textFields addObject:activeTextField];
+        [textFieldColors addObject:strokeColor];
+        
+        // Retain the text field since we're keeping it
+        [activeTextField retain];
         
         // Clear redo stacks
-        [undoTextAnnotations removeAllObjects];
-        [undoTextColors removeAllObjects];
+        [undoTextFields removeAllObjects];
+        [undoTextFieldColors removeAllObjects];
         
-        NSLog(@"Added text annotation: %@", text);
+        NSLog(@"Added text field: %@", text);
+    } else {
+        // If empty, remove it
+        [activeTextField removeFromSuperview];
     }
     
-    // Clean up current text field
-    [activeTextField removeFromSuperview];
+    // Clean up current reference
     [activeTextField release];
     activeTextField = nil;
     
@@ -2439,29 +2471,19 @@
 }
 
 - (void)drawTextAnnotations {
-    for (NSUInteger i = 0; i < [textAnnotations count]; i++) {
-        NSDictionary *annotation = [textAnnotations objectAtIndex:i];
-        NSColor *color = [textColors objectAtIndex:i];
-        
-        NSString *text = [annotation objectForKey:@"text"];
-        NSPoint position = [[annotation objectForKey:@"position"] pointValue];
-        NSFont *font = [annotation objectForKey:@"font"];
-        
-        // Create attributes dictionary
-        NSDictionary *attributes = @{
-            NSFontAttributeName: font,
-            NSForegroundColorAttributeName: color
-        };
-        
-        // Draw the text
-        [text drawAtPoint:position withAttributes:attributes];
-    }
+    // Text fields are now persistent NSTextField subviews, no need to draw them
+    // This method is kept for compatibility but does nothing
 }
 
 - (NSInteger)findTextAnnotationAtPoint:(NSPoint)point {
-    for (NSInteger i = [textAnnotations count] - 1; i >= 0; i--) {
-        NSDictionary *annotation = [textAnnotations objectAtIndex:i];
-        NSRect bounds = [self boundsForTextAnnotation:annotation];
+    // Now searches for text fields instead of annotations
+    return [self findTextFieldAtPoint:point];
+}
+
+- (NSInteger)findTextFieldAtPoint:(NSPoint)point {
+    for (NSInteger i = [textFields count] - 1; i >= 0; i--) {
+        NSTextField *textField = [textFields objectAtIndex:i];
+        NSRect bounds = [textField frame];
         
         if (NSPointInRect(point, bounds)) {
             return i;
@@ -2482,13 +2504,16 @@
 }
 
 - (void)moveSelectedText:(NSPoint)offset {
-    if (selectedTextIndex < 0 || selectedTextIndex >= [textAnnotations count]) return;
+    if (selectedTextFieldIndex < 0 || selectedTextFieldIndex >= [textFields count]) return;
     
-    NSMutableDictionary *annotation = [textAnnotations objectAtIndex:selectedTextIndex];
-    NSPoint currentPosition = [[annotation objectForKey:@"position"] pointValue];
-    NSPoint newPosition = NSMakePoint(currentPosition.x + offset.x, currentPosition.y + offset.y);
+    NSTextField *textField = [textFields objectAtIndex:selectedTextFieldIndex];
+    NSRect currentFrame = [textField frame];
+    NSRect newFrame = NSMakeRect(currentFrame.origin.x + offset.x, 
+                                  currentFrame.origin.y + offset.y,
+                                  currentFrame.size.width,
+                                  currentFrame.size.height);
     
-    [annotation setObject:[NSValue valueWithPoint:newPosition] forKey:@"position"];
+    [textField setFrame:newFrame];
     [self setNeedsDisplay:YES];
 }
 
