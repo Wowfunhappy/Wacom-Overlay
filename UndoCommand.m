@@ -343,6 +343,8 @@
     // Restore the text field at the correct position
     if (originalIndex <= [textFields count]) {
         [textField setFrame:originalFrame];
+        
+        // Shadow is now handled by the text field's drawRect method
         [drawView addSubview:textField];
         
         if (originalIndex < [textFields count]) {
