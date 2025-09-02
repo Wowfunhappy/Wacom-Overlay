@@ -118,6 +118,12 @@
             [[self getDrawView] enterTextInputMode];
             return YES;
         }
+        
+        if (cmd && option && shift && [chars isEqualToString:@"c"]) {
+            [[self getDrawView] toggleToNextColor];
+            return YES;
+        }
+        
         return NO;
     }
     
@@ -146,13 +152,13 @@
             return YES;
         }
         
-        if (cmd && !shift && [chars isEqualToString:@"d"]) {
-            [[self getDrawView] toggleToNextColor];
+        if (cmd && option && shift && [chars isEqualToString:@"t"]) {
+            [[self getDrawView] enterTextInputMode];
             return YES;
         }
         
-        if (cmd && option && shift && [chars isEqualToString:@"t"]) {
-            [[self getDrawView] enterTextInputMode];
+        if (cmd && option && shift && [chars isEqualToString:@"c"]) {
+            [[self getDrawView] toggleToNextColor];
             return YES;
         }
     } else if (type == kCGEventKeyUp) {
@@ -339,11 +345,11 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                    @"• ⌘Z (hold): Clear all drawing\n"
                    @"• ⇧⌘Z: Redo\n\n"
                    @"Colors:\n"
-                   @"• ⌘D: Toggle to next color\n\n"
+                   @"• ⌥⇧⌘C: Toggle to next color\n\n"
                    @"Text:\n"
                    @"• ⌥⇧⌘T: Enter text input mode\n"
                    @"• Alt+Enter: Create new text area below (in text mode)\n\n"
-                   @"Note: Most shortcuts work from the Wacom tablet buttons.";
+                   @"Note: Shortcuts work from any keyboard.";
     }
     
     NSAlert *alert = [[[NSAlert alloc] init] autorelease];
