@@ -63,6 +63,9 @@
     CGLayerRef activeStrokeCache;
     NSInteger lastCachedActiveSegments;
     NSInteger activeStrokeCacheThreshold;
+    
+    // Shadow settings
+    BOOL shadowsEnabled;
 }
 
 @property (nonatomic, strong) NSColor *strokeColor;
@@ -71,6 +74,7 @@
 @property (nonatomic, assign) BOOL erasing;
 @property (nonatomic, readonly) NSArray *presetColors;
 @property (nonatomic, assign) NSInteger currentColorIndex;
+@property (nonatomic, assign) BOOL shadowsEnabled;
 
 - (void)clear;
 - (void)mouseEvent:(NSEvent *)event;

@@ -291,9 +291,15 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     [colorMenu setDelegate:(id<NSMenuDelegate>)self];
     [menu addItem:colorItem];
     
-    [menu addItemWithTitle:@"Open Controls..." action:@selector(openControls:) keyEquivalent:@""].target = self;
+    // Add shadow toggle menu item
+    NSMenuItem *shadowMenuItem = [[[NSMenuItem alloc] initWithTitle:@"Shadows" action:@selector(toggleShadows:) keyEquivalent:@""] autorelease];
+    [shadowMenuItem setTarget:self];
+    [menu addItem:shadowMenuItem];
+    
     [menu addItem:[NSMenuItem separatorItem]];
-    [menu addItemWithTitle:@"Keyboard Shortcuts..." action:@selector(showKeyboardShortcuts:) keyEquivalent:@""].target = self;
+    
+    [menu addItemWithTitle:@"Open Controls..." action:@selector(openControls:) keyEquivalent:@""].target = self;
+    [menu addItemWithTitle:@"Display Keyboard Shortcuts..." action:@selector(showKeyboardShortcuts:) keyEquivalent:@""].target = self;
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItemWithTitle:@"Quit" action:@selector(terminate:) keyEquivalent:@"q"].target = NSApp;
     
@@ -308,6 +314,15 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         [self.controlPanel orderFrontRegardless];
         [self.controlPanel makeKeyAndOrderFront:nil];
     }
+}
+
+- (void)toggleShadows:(id)sender {
+    BOOL currentState = drawView.shadowsEnabled;
+    drawView.shadowsEnabled = !currentState;
+    
+    // Update menu item title and state
+    NSMenuItem *menuItem = (NSMenuItem *)sender;
+    [menuItem setState:drawView.shadowsEnabled ? NSOnState : NSOffState];
 }
 
 - (void)showKeyboardShortcuts:(id)sender {
@@ -344,6 +359,13 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 }
 
 NSMenu *colorMenu = nil;
+
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
+    if ([menuItem action] == @selector(toggleShadows:)) {
+        [menuItem setState:drawView.shadowsEnabled ? NSOnState : NSOffState];
+    }
+    return YES;
+}
 
 - (void)menuNeedsUpdate:(NSMenu *)menu {
     if (colorMenu != menu) return;

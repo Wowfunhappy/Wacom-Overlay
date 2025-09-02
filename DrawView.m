@@ -11,20 +11,26 @@
 @implementation EscapeHandlingTextField
 
 - (void)drawRect:(NSRect)dirtyRect {
-    // Set up a strong drop shadow
-    NSShadow *shadow = [[NSShadow alloc] init];
-    [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
-    [shadow setShadowBlurRadius:3.0];
-    [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.6]];
-    
-    [NSGraphicsContext saveGraphicsState];
-    [shadow set];
-    
-    // Draw the text field content with shadow
-    [super drawRect:dirtyRect];
-    
-    [NSGraphicsContext restoreGraphicsState];
-    [shadow release];
+    // Only apply shadow if enabled
+    if (self.drawView && self.drawView.shadowsEnabled) {
+        // Set up a strong drop shadow
+        NSShadow *shadow = [[NSShadow alloc] init];
+        [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
+        [shadow setShadowBlurRadius:3.0];
+        [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.6]];
+        
+        [NSGraphicsContext saveGraphicsState];
+        [shadow set];
+        
+        // Draw the text field content with shadow
+        [super drawRect:dirtyRect];
+        
+        [NSGraphicsContext restoreGraphicsState];
+        [shadow release];
+    } else {
+        // Draw without shadow
+        [super drawRect:dirtyRect];
+    }
 }
 
 - (void)keyDown:(NSEvent *)event {
@@ -55,6 +61,7 @@
 @synthesize strokeColor;
 @synthesize erasing = mErasing;
 @synthesize currentColorIndex;
+@synthesize shadowsEnabled;
 @dynamic presetColors;
 
 // Custom getter for strokeColor
@@ -164,6 +171,9 @@
         cacheNeedsUpdate = YES;
         lastCachedStrokeCount = 0;
         
+        // Load shadow setting from user defaults (default is NO/off)
+        shadowsEnabled = [defaults boolForKey:@"WacomOverlayShadowsEnabled"];
+        
         NSLog(@"DrawView initialized with frame: %@", NSStringFromRect(frame));
     }
     return self;
@@ -177,15 +187,18 @@
     // If we have stroke selection active, we need to handle it differently
     // because selection highlighting can't be cached
     if (isStrokeSelected) {
-        // Set up drop shadow for selected strokes
-        NSShadow *shadow = [[NSShadow alloc] init];
-        [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
-        [shadow setShadowBlurRadius:3.0];
-        [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.5]];
-        
-        // Save graphics state before applying shadow
-        [NSGraphicsContext saveGraphicsState];
-        [shadow set];
+        // Set up drop shadow for selected strokes if enabled
+        NSShadow *shadow = nil;
+        if (shadowsEnabled) {
+            shadow = [[NSShadow alloc] init];
+            [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
+            [shadow setShadowBlurRadius:3.0];
+            [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.5]];
+            
+            // Save graphics state before applying shadow
+            [NSGraphicsContext saveGraphicsState];
+            [shadow set];
+        }
         
         // Draw all saved paths with their colors (traditional method for selection)
         for (NSUInteger i = 0; i < [paths count]; i++) {
@@ -245,9 +258,11 @@
             [path stroke];
         }
         
-        // Restore graphics state to remove shadow
-        [NSGraphicsContext restoreGraphicsState];
-        [shadow release];
+        // Restore graphics state to remove shadow if enabled
+        if (shadowsEnabled) {
+            [NSGraphicsContext restoreGraphicsState];
+            [shadow release];
+        }
     } else {
         // Use high-performance cached rendering for normal drawing
         // Cached strokes already have shadows baked in, so don't apply shadow here
@@ -257,14 +272,17 @@
         // Draw any strokes that aren't cached yet (current active stroke) with shadow
         NSInteger cachedCount = lastCachedStrokeCount;
         if (cachedCount < [paths count]) {
-            // Set up drop shadow for uncached strokes
-            NSShadow *shadow = [[NSShadow alloc] init];
-            [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
-            [shadow setShadowBlurRadius:3.0];
-            [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.5]];
-            
-            [NSGraphicsContext saveGraphicsState];
-            [shadow set];
+            // Set up drop shadow for uncached strokes if enabled
+            NSShadow *shadow = nil;
+            if (shadowsEnabled) {
+                shadow = [[NSShadow alloc] init];
+                [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
+                [shadow setShadowBlurRadius:3.0];
+                [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.5]];
+                
+                [NSGraphicsContext saveGraphicsState];
+                [shadow set];
+            }
             
             for (NSUInteger i = cachedCount; i < [paths count]; i++) {
                 NSBezierPath *path = [paths objectAtIndex:i];
@@ -274,21 +292,26 @@
                 [path stroke];
             }
             
-            [NSGraphicsContext restoreGraphicsState];
-            [shadow release];
+            if (shadowsEnabled) {
+                [NSGraphicsContext restoreGraphicsState];
+                [shadow release];
+            }
         }
     }
     
     // Draw current path and straight line preview with shadow
     if (currentPath || straightLinePath) {
-        // Set up drop shadow for current drawing
-        NSShadow *shadow = [[NSShadow alloc] init];
-        [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
-        [shadow setShadowBlurRadius:3.0];
-        [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.5]];
-        
-        [NSGraphicsContext saveGraphicsState];
-        [shadow set];
+        // Set up drop shadow for current drawing if enabled
+        NSShadow *shadow = nil;
+        if (shadowsEnabled) {
+            shadow = [[NSShadow alloc] init];
+            [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
+            [shadow setShadowBlurRadius:3.0];
+            [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.5]];
+            
+            [NSGraphicsContext saveGraphicsState];
+            [shadow set];
+        }
         
         // Draw current path if it exists
         if (currentPath) {
@@ -302,8 +325,10 @@
             [straightLinePath stroke];
         }
         
-        [NSGraphicsContext restoreGraphicsState];
-        [shadow release];
+        if (shadowsEnabled) {
+            [NSGraphicsContext restoreGraphicsState];
+            [shadow release];
+        }
     }
     
     // Text fields are now persistent NSTextField subviews, no need to draw them
@@ -2721,6 +2746,19 @@
     [defaults synchronize];
 }
 
+- (void)setShadowsEnabled:(BOOL)enabled {
+    shadowsEnabled = enabled;
+    
+    // Save to user defaults
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setBool:shadowsEnabled forKey:@"WacomOverlayShadowsEnabled"];
+    [defaults synchronize];
+    
+    // Invalidate cache to redraw with/without shadows
+    [self invalidateStrokeCache];
+    [self setNeedsDisplay:YES];
+}
+
 - (void)resetToDefaults {
     // Reset to default colors
     NSColor *color1 = [NSColor redColor];
@@ -2829,12 +2867,15 @@
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext:layerNSContext];
     
-    // Set up drop shadow for cached strokes
-    NSShadow *shadow = [[NSShadow alloc] init];
-    [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
-    [shadow setShadowBlurRadius:3.0];
-    [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.5]];
-    [shadow set];
+    // Set up drop shadow for cached strokes if enabled
+    NSShadow *shadow = nil;
+    if (shadowsEnabled) {
+        shadow = [[NSShadow alloc] init];
+        [shadow setShadowOffset:NSMakeSize(2.0, -2.0)];
+        [shadow setShadowBlurRadius:3.0];
+        [shadow setShadowColor:[[NSColor blackColor] colorWithAlphaComponent:0.5]];
+        [shadow set];
+    }
     
     // Use the same calculation as in the validation check
     NSInteger strokesToDraw = targetCacheCount;
@@ -2848,7 +2889,9 @@
         [path stroke];
     }
     
-    [shadow release];
+    if (shadowsEnabled) {
+        [shadow release];
+    }
     [NSGraphicsContext restoreGraphicsState];
     
     cacheNeedsUpdate = NO;
