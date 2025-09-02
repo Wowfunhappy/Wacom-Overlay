@@ -2343,7 +2343,7 @@
         BOOL success = [[self window] makeFirstResponder:activeTextField];
         if (success) {
             NSLog(@"Text field focused successfully");
-            // Set insertion point color to match current stroke color
+            // Set insertion point color to match current stroke color for new text fields
             NSTextView *fieldEditor = (NSTextView *)[[activeTextField window] fieldEditor:YES forObject:activeTextField];
             if (fieldEditor && [fieldEditor isKindOfClass:[NSTextView class]]) {
                 [fieldEditor setInsertionPointColor:strokeColor];
@@ -2354,7 +2354,7 @@
             success = [[self window] makeFirstResponder:activeTextField];
             if (success) {
                 NSLog(@"Text field focused successfully on second attempt");
-                // Set insertion point color to match current stroke color
+                // Set insertion point color to match current stroke color for new text fields
                 NSTextView *fieldEditor = (NSTextView *)[[activeTextField window] fieldEditor:YES forObject:activeTextField];
                 if (fieldEditor && [fieldEditor isKindOfClass:[NSTextView class]]) {
                     [fieldEditor setInsertionPointColor:strokeColor];
@@ -2371,6 +2371,16 @@
         NSTextView *fieldEditor = (NSTextView *)[[activeTextField window] fieldEditor:YES forObject:activeTextField];
         if (fieldEditor && [fieldEditor isKindOfClass:[NSTextView class]]) {
             [fieldEditor setInsertionPointColor:strokeColor];
+        }
+    }
+}
+
+- (void)updateTextFieldCursorColorToMatch {
+    if (activeTextField) {
+        NSTextView *fieldEditor = (NSTextView *)[[activeTextField window] fieldEditor:YES forObject:activeTextField];
+        if (fieldEditor && [fieldEditor isKindOfClass:[NSTextView class]]) {
+            NSColor *textFieldColor = [activeTextField textColor];
+            [fieldEditor setInsertionPointColor:textFieldColor];
         }
     }
 }
@@ -2411,6 +2421,13 @@
             
             NSLog(@"Added new text field: %@", text);
         } else {
+            // Update the color in textFieldColors array to match current text field color
+            NSUInteger colorIndex = [textFields indexOfObject:activeTextField];
+            if (colorIndex != NSNotFound) {
+                NSColor *currentTextColor = [activeTextField textColor];
+                [textFieldColors replaceObjectAtIndex:colorIndex withObject:currentTextColor];
+            }
+            
             // Check if text actually changed
             if (originalTextContent && ![originalTextContent isEqualToString:text]) {
                 // Create edit text command
@@ -2498,6 +2515,13 @@
             
             NSLog(@"Added new text field: %@", text);
         } else {
+            // Update the color in textFieldColors array to match current text field color
+            NSUInteger colorIndex = [textFields indexOfObject:activeTextField];
+            if (colorIndex != NSNotFound) {
+                NSColor *currentTextColor = [activeTextField textColor];
+                [textFieldColors replaceObjectAtIndex:colorIndex withObject:currentTextColor];
+            }
+            
             // Check if text actually changed
             if (originalTextContent && ![originalTextContent isEqualToString:text]) {
                 // Create edit text command
@@ -2622,13 +2646,14 @@
         // Move cursor to beginning of text
         NSText *fieldEditor = [[self window] fieldEditor:YES forObject:activeTextField];
         [fieldEditor setSelectedRange:NSMakeRange(0, 0)];
-        // Set insertion point color to match current stroke color
+        // Set insertion point color to match the text field's color, not current stroke color
         if ([fieldEditor isKindOfClass:[NSTextView class]]) {
-            [(NSTextView *)fieldEditor setInsertionPointColor:strokeColor];
+            NSColor *textFieldColor = [activeTextField textColor];
+            [(NSTextView *)fieldEditor setInsertionPointColor:textFieldColor];
         }
     } else {
-        // For mouse clicks, also set the cursor color after a delay
-        [self performSelector:@selector(updateTextFieldCursorColor) withObject:nil afterDelay:0.1];
+        // For mouse clicks, also set the cursor color after a delay to match text field's color
+        [self performSelector:@selector(updateTextFieldCursorColorToMatch) withObject:nil afterDelay:0.1];
     }
     // Otherwise let the field activate naturally from mouse click
     
