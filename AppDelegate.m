@@ -10,7 +10,7 @@
 @implementation AppDelegate
 
 @synthesize overlayWindow, controlPanel, drawView, wacomDriverPID;
-@synthesize statusItem, lastUndoKeyTime, isUndoKeyDown, isNormalModeKeyDown, undoHoldTimer;
+@synthesize statusItem, lastUndoKeyTime, isUndoKeyDown, isNormalModeKeyDown, undoHoldTimer, isShowingKeyboardShortcuts;
 
 - (pid_t)findWacomDriverPID {
     pid_t wacomPID = 0;
@@ -109,6 +109,11 @@
 }
 
 - (BOOL)handleKeyboardEvent:(NSEvent *)nsEvent type:(CGEventType)type isFromWacom:(BOOL)isFromWacom {
+    // Don't intercept any keyboard events while showing the keyboard shortcuts alert
+    if (self.isShowingKeyboardShortcuts) {
+        return NO;
+    }
+    
     if (!isFromWacom && type == kCGEventKeyDown) {
         BOOL cmd, shift, option;
         [self parseModifierFlags:[nsEvent modifierFlags] cmd:&cmd shift:&shift option:&option];
@@ -352,12 +357,18 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
                    @"Note: Shortcuts work from any keyboard.";
     }
     
+    // Set flag to disable keyboard interception while alert is showing
+    self.isShowingKeyboardShortcuts = YES;
+    
     NSAlert *alert = [[[NSAlert alloc] init] autorelease];
     [alert setMessageText:@"Keyboard Shortcuts"];
     [alert setInformativeText:shortcuts];
     [alert addButtonWithTitle:@"OK"];
     [alert setAlertStyle:NSInformationalAlertStyle];
     [alert runModal];
+    
+    // Reset flag after alert is dismissed
+    self.isShowingKeyboardShortcuts = NO;
 }
 
 - (void)clearDrawing:(id)sender {
@@ -428,6 +439,7 @@ NSMenu *colorMenu = nil;
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
     self.isUndoKeyDown = NO;
     self.isNormalModeKeyDown = NO;
+    self.isShowingKeyboardShortcuts = NO;
     self.lastUndoKeyTime = nil;
     
     NSDictionary *options = @{(__bridge NSString *)kAXTrustedCheckOptionPrompt: @NO};

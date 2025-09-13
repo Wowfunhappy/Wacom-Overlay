@@ -21,6 +21,7 @@
 @property (nonatomic, assign) BOOL isUndoKeyDown;
 @property (nonatomic, assign) BOOL isNormalModeKeyDown; // Track Cmd+; state
 @property (nonatomic, retain) NSTimer *undoHoldTimer;
+@property (nonatomic, assign) BOOL isShowingKeyboardShortcuts; // Track when alert is showing
 
 - (pid_t)findWacomDriverPID;
 - (void)setupStatusBarMenu;
