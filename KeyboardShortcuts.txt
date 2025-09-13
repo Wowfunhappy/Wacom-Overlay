@@ -1,6 +1,6 @@
 These shortcuts will be recognized from any keyboard:
 
-⌥⇧⌘C			Switch color
+⌥⇧⌘C		Switch color
 ⇧ (hold)		Draw straight line
 ⌥⇧⌘T		Create text area
 ⌥↵			While typing, create new line
