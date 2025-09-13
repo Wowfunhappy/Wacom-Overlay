@@ -152,7 +152,6 @@
         isEditingText = NO;
         activeTextField = nil;
         selectedTextFieldIndex = -1;
-        originalWindowLevel = NSScreenSaverWindowLevel;  // Initialize to default overlay window level
         
         // Make the view transparent to allow click-through
         [self setWantsLayer:YES];
@@ -2279,7 +2278,6 @@
     
     // Ensure window state is restored
     [[self window] setIgnoresMouseEvents:YES];
-    [[self window] setLevel:originalWindowLevel];  // Always restore the window level
     
     // Restore normal cursor
     [[NSCursor arrowCursor] set];
@@ -2317,12 +2315,6 @@
     
     // Temporarily allow the window to accept events for text input
     [[self window] setIgnoresMouseEvents:NO];
-    
-    // Store the original window level
-    originalWindowLevel = [[self window] level];
-    
-    // Temporarily lower window level to allow proper keyboard focus
-    [[self window] setLevel:NSFloatingWindowLevel];
     
     // Activate the application to ensure it can receive keyboard events
     [NSApp activateIgnoringOtherApps:YES];
@@ -2467,7 +2459,6 @@
     
     // Completely exit text mode and restore normal operation
     [[self window] setIgnoresMouseEvents:YES];
-    [[self window] setLevel:originalWindowLevel]; // Restore original window level
     [[NSCursor arrowCursor] set];
     
     NSLog(@"Text input completed, returned to normal mode");
@@ -2593,7 +2584,6 @@
     
     // Restore window to ignore mouse events and normal cursor
     [[self window] setIgnoresMouseEvents:YES];
-    [[self window] setLevel:originalWindowLevel]; // Restore original window level
     [[NSCursor arrowCursor] set];
     
     NSLog(@"Cancelled text input");
@@ -2622,12 +2612,6 @@
      
     // Temporarily allow the window to accept events for text input
     [[self window] setIgnoresMouseEvents:NO];
-    
-    // Store the original window level
-    originalWindowLevel = [[self window] level];
-    
-    // Temporarily lower window level to allow proper keyboard focus
-    [[self window] setLevel:NSFloatingWindowLevel];
     
     // Make the text field editable
     [activeTextField setEditable:YES];

@@ -51,7 +51,6 @@
     NSString *originalTextContent; // Track original text for undo
     NSInteger selectedTextFieldIndex;
     NSPoint textInputPosition;
-    NSInteger originalWindowLevel;
     CGFloat textSize;
     
     // Performance caching variables
